@@ -3,6 +3,29 @@
 find lib -name "*.dart" -type f -exec cat {} + > all_current_code.txt
 find chat -name "*.dart" -type f -exec cat {} + > all_chat_code.txt
 
+----
+# Build the web app
+flutter build web --wasm --base-href "/bar-app/" --dart-define-from-file=env/prod.json
+# Deploy to gh-pages branch
+
+- copy web folder to somewhere
+
+## first time
+git checkout --orphan github-page 
+
+## future
+git checkout github-page 
+
+- delete all content
+- paste content from recently copied web folder
+
+git add .
+git commit -m "Deploy to GitHub Pages"
+git push origin github-page --force
+git checkout main
+
+----
+
 
 find android \
 \( -name "*.kts" -o -name "*.gradle" -o -name "*.properties" -o -name "*.xml" -o -name "*.java" -o -name "*.kt" \) \
