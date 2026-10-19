@@ -5,7 +5,7 @@ find chat -name "*.dart" -type f -exec cat {} + > all_chat_code.txt
 
 ----
 # Build the web app
-flutter build web --wasm --base-href "/bar-app/" --dart-define-from-file=env/prod.json
+flutter build web --wasm --base-href "/bar_app/" --dart-define-from-file=env/prod.json
 # Deploy to gh-pages branch
 
 - copy web folder to somewhere
