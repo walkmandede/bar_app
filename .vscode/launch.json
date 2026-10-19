@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Web — Staging",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "toolArgs": [
+        "--dart-define-from-file=env/staging.json"
+      ]
+    },
+    {
+      "name": "Web — Prod",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "toolArgs": [
+        "--dart-define-from-file=env/prod.json"
+      ]
+    },
+    {
+      "name": "Web — Staging (Profile)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "flutterMode": "profile",
+      "toolArgs": [
+        "--dart-define-from-file=env/staging.json"
+      ]
+    },
+    {
+      "name": "Web — Prod (Release)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "flutterMode": "release",
+      "toolArgs": [
+        "--dart-define-from-file=env/prod.json"
+      ]
+    }
+  ]
+}
