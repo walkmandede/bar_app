@@ -55,7 +55,7 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
       if (q.isEmpty) return true;
       final text = [
         i.name,
-        i.itemSerial,
+        i.itemSerial ?? '',
         i.brandName ?? '',
         i.categoryName ?? '',
         i.variation,
@@ -472,7 +472,7 @@ class _ItemTable extends StatelessWidget {
                 DataRow(
                   onSelectChanged: (_) => context.push('/items/${i.id}'),
                   cells: [
-                    DataCell(Text(i.itemSerial)),
+                    DataCell(Text(i.itemSerial ?? '-')),
                     DataCell(Text(i.name)),
                     DataCell(Text(i.brandName ?? '-')),
                     DataCell(Text(i.categoryName ?? '-')),

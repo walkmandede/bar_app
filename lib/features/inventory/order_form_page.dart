@@ -473,7 +473,7 @@ class _ItemPickerDialogState extends ConsumerState<_ItemPickerDialog> {
     if (_q.isEmpty) return true;
     final text = [
       i.name,
-      i.itemSerial,
+      i.itemSerial ?? '',
       i.brandName ?? '',
       i.categoryName ?? '',
       i.variation,

@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../core/app_svgs.dart';
 import '../../core/app_theme.dart';
+import '../../core/responsive.dart';
 import '../../core/widgets.dart';
 import '../../models/inventory_entry.dart';
 import '../../providers/providers.dart';
@@ -28,40 +29,72 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: PageContainer(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    final user = ref.watch(authProvider);
+    final mobile = Responsive.isMobile(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Row(
           children: [
-            PageHeader(
-              title: 'Dashboard',
-              subtitle: DateFormat('EEEE, d MMMM yyyy').format(DateTime.now()),
-            ),
-            const SizedBox(height: 20),
-            const _Actions(),
-            const SizedBox(height: 20),
-            LayoutBuilder(
-              builder: (context, c) {
-                final calendar = _calendar();
-                final log = _log();
-                if (c.maxWidth < 900) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [calendar, const SizedBox(height: 20), log],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(width: 380, child: calendar),
-                    const SizedBox(width: 20),
-                    Expanded(child: log),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 24),
+            Text('Bar Inventory', style: TextStyle(fontWeight: FontWeight.w700)),
+            SizedBox(width: 8),
+            EnvBadge(),
           ],
+        ),
+        actions: [
+          if (!mobile && user != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Center(
+                child: Text(
+                  user.displayName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          IconButton(
+            tooltip: 'Log out',
+            onPressed: () => ref.read(authProvider.notifier).logout(),
+            icon: AppIcon(AppSvgs.logoutIcon, color: AppColors.text),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: PageContainer(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PageHeader(
+                title: 'Dashboard',
+                subtitle: DateFormat('EEEE, d MMMM yyyy').format(DateTime.now()),
+              ),
+              const SizedBox(height: 20),
+              const _Actions(),
+              const SizedBox(height: 20),
+              LayoutBuilder(
+                builder: (context, c) {
+                  final calendar = _calendar();
+                  final log = _log();
+                  if (c.maxWidth < 900) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [calendar, const SizedBox(height: 20), log],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(width: 380, child: calendar),
+                      const SizedBox(width: 20),
+                      Expanded(child: log),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
         ),
       ),
     );
@@ -224,6 +257,7 @@ class _Stat extends StatelessWidget {
   }
 }
 
+/// The home actions. Every other screen is opened from here.
 class _Actions extends StatelessWidget {
   const _Actions();
 
@@ -234,15 +268,22 @@ class _Actions extends StatelessWidget {
         label: 'Items',
         icon: AppSvgs.itemsIcon,
         color: AppColors.text,
-        soft: AppColors.bg,
-        onTap: () => context.go('/items'),
+        soft: AppColors.muted,
+        onTap: () => context.push('/items'),
       ),
       (
         label: 'Inventory History',
         icon: AppSvgs.historyIcon,
         color: AppColors.text,
-        soft: AppColors.bg,
-        onTap: () => context.go('/history'),
+        soft: AppColors.muted,
+        onTap: () => context.push('/history'),
+      ),
+      (
+        label: 'Reports',
+        icon: AppSvgs.reportIcon,
+        color: AppColors.text,
+        soft: AppColors.muted,
+        onTap: () => context.push('/reports'),
       ),
       (
         label: 'New Supply Order',
@@ -270,7 +311,7 @@ class _Actions extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, c) {
         const gap = 12.0;
-        final cols = c.maxWidth >= 900 ? 5 : (c.maxWidth >= 560 ? 3 : 2);
+        final cols = c.maxWidth >= 1000 ? 6 : (c.maxWidth >= 560 ? 3 : 2);
         final tileWidth = (c.maxWidth - gap * (cols - 1)) / cols;
 
         return Wrap(

@@ -1,4 +1,5 @@
 // core/widgets.dart
+import 'package:bar_app/core/app_env.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -330,6 +331,62 @@ class PageHeader extends StatelessWidget {
         ),
         if (trailing != null) trailing!,
       ],
+    );
+  }
+}
+
+/// Small label shown only outside prod (for example STAGING).
+class EnvBadge extends StatelessWidget {
+  const EnvBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (AppEnv.isProd) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        AppEnv.envName.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Back arrow. Goes back, or opens [fallback] if there is nothing to go back to.
+class AppBackButton extends StatelessWidget {
+  const AppBackButton({super.key, this.fallback = '/'});
+
+  final String fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Back',
+      onPressed: () => goBackOr(context, fallback),
+      icon: AppIcon(AppSvgs.chevronLeftIcon, color: AppColors.text),
+    );
+  }
+}
+
+/// Wrapper for screens opened from the dashboard: a page with a back arrow.
+class SubPage extends StatelessWidget {
+  const SubPage({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(leading: const AppBackButton()),
+      body: child,
     );
   }
 }

@@ -58,7 +58,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
       final item = await ref.read(itemRepositoryProvider).fetchItem(widget.itemId!);
       if (!mounted) return;
       setState(() {
-        _serial.text = item.itemSerial;
+        _serial.text = item.itemSerial ?? '';
         _name.text = item.name;
         _image.text = item.imageUrl ?? '';
         _desc.text = item.shortDesc;
@@ -219,8 +219,7 @@ class _ItemFormPageState extends ConsumerState<ItemFormPage> {
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _serial,
-                        decoration: const InputDecoration(labelText: 'Item serial'),
-                        validator: (v) => _required(v, 'Item serial'),
+                        decoration: const InputDecoration(labelText: 'Item serial (optional)'),
                       ),
                       const SizedBox(height: 14),
                       TextFormField(

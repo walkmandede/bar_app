@@ -5,7 +5,6 @@ String joinSubtitle(String variation, String size) => [variation, size].where((s
 class Item {
   const Item({
     required this.id,
-    required this.itemSerial,
     required this.name,
     required this.shortDesc,
     required this.size,
@@ -16,6 +15,7 @@ class Item {
     required this.updatedBy,
     required this.createdAt,
     required this.updatedAt,
+    this.itemSerial,
     this.brandId,
     this.brandName,
     this.categoryId,
@@ -24,7 +24,7 @@ class Item {
   });
 
   final String id;
-  final String itemSerial;
+  final String? itemSerial;
   final String name;
   final String shortDesc;
   final String size;
@@ -55,7 +55,7 @@ class Item {
 
     return Item(
       id: j['id'] as String,
-      itemSerial: j['item_serial'] as String,
+      itemSerial: j['item_serial'] as String?,
       name: j['name'] as String,
       shortDesc: (j['short_desc'] as String?) ?? '',
       size: (j['size'] as String?) ?? '',
@@ -78,8 +78,8 @@ class Item {
 /// Values from the create/edit form.
 class ItemInput {
   const ItemInput({
-    required this.itemSerial,
     required this.name,
+    this.itemSerial,
     this.brandId,
     this.categoryId,
     this.imageUrl,
@@ -88,7 +88,7 @@ class ItemInput {
     this.variation = '',
   });
 
-  final String itemSerial;
+  final String? itemSerial;
   final String name;
   final String? brandId;
   final String? categoryId;
@@ -98,7 +98,8 @@ class ItemInput {
   final String variation;
 
   Map<String, dynamic> toJson() => {
-    'item_serial': itemSerial.trim(),
+    // An empty serial is saved as "no serial" (null), never as an empty text.
+    'item_serial': (itemSerial == null || itemSerial!.trim().isEmpty) ? null : itemSerial!.trim(),
     'name': name.trim(),
     'brand_id': brandId,
     'category_id': categoryId,

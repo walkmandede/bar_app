@@ -1,0 +1,19 @@
+
+
+New Changes:
+- Remove navigation items on Dashboard Screen (All other screens can be opend from actions home)
+- Add Actions on Dashboard Screen
+    - Reports (For checking report in date range view)
+- Add feature to delete inventory record from History Screen (sale, order, manual)
+    - Restore item count to current inventory
+- Make itemSerial of Item entity optional
+
+Feature Detail:
+
+- Reports
+    - Report Screen (Initial Today view, must have filter with date range picker)
+    - Must show in excel-like table view with following columns (Item Name, Opening Stock, Supply Qty, Sale Qty, Closing Stock, Remark)
+    - Multiple date view must be shown in excel like sheet format (can navigate different sheets for different dates - a sheet for a date)
+    - Can be export into excel or google sheet format (multiple sheet in a single xlss file for multiple dates)
+    - e.g. if users select 12.10.26 - 15.10.26, the result with be a single xlss file with 4 sheets (12/13/14/15).
+    - Neat, clean UI important. Responsive and easy to use on mobile too.

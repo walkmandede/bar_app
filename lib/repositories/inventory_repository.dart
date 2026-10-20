@@ -76,4 +76,23 @@ class InventoryRepository {
     });
     return list;
   }
+
+  /// Deletes a record and puts the stock back.
+  /// Fails with a clear message if the stock would go below 0.
+  Future<void> deleteEntry({required String userId, required String entryId}) async {
+    await _db.rpc(
+      'delete_inventory_entry',
+      params: {'p_user_id': userId, 'p_entry_id': entryId},
+    );
+  }
+
+  /// Raw report rows from the database (one row per item per date).
+  Future<List<Map<String, dynamic>>> fetchStockReportRows(DateTime from, DateTime to) async {
+    final res = await _db.rpc(
+      'get_stock_report',
+      params: {'p_from': _date(from), 'p_to': _date(to)},
+    );
+    final list = (res as List?) ?? const [];
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
 }

@@ -1,6 +1,7 @@
 // providers/providers.dart
 import 'dart:convert';
 
+import 'package:bar_app/models/stock_report.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show Supabase, SupabaseClient;
@@ -89,6 +90,15 @@ final itemHistoryProvider = FutureProvider.autoDispose.family<List<ItemHistoryRo
   (ref, itemId) => ref.watch(inventoryRepositoryProvider).fetchItemHistory(itemId),
 );
 
+typedef ReportQuery = ({DateTime from, DateTime to});
+
+/// One sheet per date in the range.
+final stockReportProvider = FutureProvider.autoDispose.family<List<ReportSheet>, ReportQuery>((ref, q) async {
+  final rows = await ref.watch(inventoryRepositoryProvider).fetchStockReportRows(q.from, q.to);
+  final items = await ref.watch(itemsProvider.future);
+  return buildReportSheets(from: q.from, to: q.to, serverRows: rows, activeItems: items);
+});
+
 /// Call after any change so every screen reloads fresh data.
 void refreshAll(WidgetRef ref) {
   ref.invalidate(itemsProvider);
@@ -98,4 +108,5 @@ void refreshAll(WidgetRef ref) {
   ref.invalidate(entriesByDayProvider);
   ref.invalidate(historyProvider);
   ref.invalidate(itemHistoryProvider);
+  ref.invalidate(stockReportProvider);
 }

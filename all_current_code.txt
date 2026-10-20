@@ -1,0 +1,4289 @@
+// core/widgets.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+
+import '../models/inventory_entry.dart';
+import 'app_exception.dart';
+import 'app_svgs.dart';
+import 'app_theme.dart';
+import 'responsive.dart';
+
+import 'package:go_router/go_router.dart';
+
+/// Renders an SVG string from AppSvgs in a single color.
+class AppIcon extends StatelessWidget {
+  const AppIcon(this.svg, {super.key, this.size = 20, this.color});
+
+  final String svg;
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? IconTheme.of(context).color ?? AppColors.text;
+    return SvgPicture.string(
+      svg,
+      width: size,
+      height: size,
+      colorFilter: ColorFilter.mode(c, BlendMode.srcIn),
+    );
+  }
+}
+
+/// White rounded card with a thin border.
+class AppCard extends StatelessWidget {
+  const AppCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(20),
+    this.onTap,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(padding: padding, child: child),
+      ),
+    );
+  }
+}
+
+/// Centers page content and limits its width on big screens.
+class PageContainer extends StatelessWidget {
+  const PageContainer({super.key, required this.child, this.maxWidth = 1200});
+
+  final Widget child;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final mobile = Responsive.isMobile(context);
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: mobile ? 16 : 28,
+            vertical: mobile ? 12 : 24,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class LoadingView extends StatelessWidget {
+  const LoadingView({super.key});
+
+  @override
+  Widget build(BuildContext context) => const Center(child: CircularProgressIndicator());
+}
+
+class ErrorState extends StatelessWidget {
+  const ErrorState({super.key, required this.error, this.onRetry});
+
+  final Object error;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(errorMessage(error), textAlign: TextAlign.center),
+            if (onRetry != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class EmptyState extends StatelessWidget {
+  const EmptyState({super.key, required this.message, this.action});
+
+  final String message;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppIcon(AppSvgs.itemsIcon, size: 32, color: AppColors.textSoft),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textSoft),
+            ),
+            if (action != null) ...[const SizedBox(height: 16), action!],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Item image from a URL. Shows a placeholder when empty or broken.
+/// Use expand: true inside an AspectRatio to fill the space.
+class ItemThumb extends StatelessWidget {
+  const ItemThumb({super.key, this.url, this.size = 48, this.expand = false});
+
+  final String? url;
+  final double size;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) {
+    final placeholder = Stack(
+      alignment: Alignment.center,
+      children: [
+        Center(
+          child: AppIcon(AppSvgs.imageIcon, size: size * 0.4, color: AppColors.textSoft),
+        ),
+        // if (url != null)
+        //   Padding(
+        //     padding: EdgeInsetsGeometry.all(10),
+        //     child: Text(
+        //       url ?? 'N/A',
+        //     ),
+        //   ),
+      ],
+    );
+    final hasUrl = url != null && url!.trim().isNotEmpty;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(expand ? 14 : size * 0.25),
+      child: Container(
+        width: expand ? null : size,
+        height: expand ? null : size,
+        color: AppColors.bg,
+        child: hasUrl
+            ? Image.network(
+                url!,
+                fit: BoxFit.contain,
+                errorBuilder: (e1, e2, e3) {
+                  return placeholder;
+                },
+              )
+            : placeholder,
+      ),
+    );
+  }
+}
+
+/// Shows stock quantity. Red when the stock is 0.
+class StockBadge extends StatelessWidget {
+  const StockBadge(this.quantity, {super.key});
+
+  final int quantity;
+
+  @override
+  Widget build(BuildContext context) {
+    final out = quantity == 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: out ? AppColors.dangerSoft : AppColors.bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        out ? 'Out of stock' : '$quantity in stock',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: out ? AppColors.danger : AppColors.text,
+        ),
+      ),
+    );
+  }
+}
+
+extension EntryTypeStyle on EntryType {
+  Color get color => switch (this) {
+    EntryType.supply => AppColors.success,
+    EntryType.sale => AppColors.primary,
+    EntryType.manual => AppColors.info,
+  };
+
+  Color get softColor => switch (this) {
+    EntryType.supply => AppColors.successSoft,
+    EntryType.sale => AppColors.primarySoft,
+    EntryType.manual => AppColors.infoSoft,
+  };
+
+  String get icon => switch (this) {
+    EntryType.supply => AppSvgs.supplyIcon,
+    EntryType.sale => AppSvgs.saleIcon,
+    EntryType.manual => AppSvgs.manualIcon,
+  };
+}
+
+class TypeChip extends StatelessWidget {
+  const TypeChip(this.type, {super.key});
+
+  final EntryType type;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: type.softColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        type.label,
+        style: TextStyle(
+          color: type.color,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+/// 3 -> "+3", -4 -> "-4"
+String signed(int n) => n > 0 ? '+$n' : '$n';
+
+void showMessage(BuildContext context, String text, {bool isError = false}) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: isError ? AppColors.danger : AppColors.text,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+}
+
+/// Go back if there is a page to go back to, otherwise open [fallback].
+void goBackOr(BuildContext context, String fallback) {
+  if (context.canPop()) {
+    context.pop();
+  } else {
+    context.go(fallback);
+  }
+}
+
+/// Page title row used on the main screens.
+class PageHeader extends StatelessWidget {
+  const PageHeader({super.key, required this.title, this.subtitle, this.trailing});
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final mobile = Responsive.isMobile(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: mobile ? 22 : 28,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (subtitle != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    subtitle!,
+                    style: const TextStyle(color: AppColors.textSoft),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+// core/app_theme.dart
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+class AppColors {
+  static const bg = Color(0xFFFCFCFD); // page background, almost white
+  static const muted = Color(0xFFF3F3F5); // soft grey for chips, placeholders, selected tiles
+  static const surface = Colors.white;
+  static const border = Color(0xFFE9E9EC);
+  static const text = Color(0xFF1A1A1A);
+  static const textSoft = Color(0xFF8A8A90);
+
+  static const primary = Color(0xFFE8553D);
+  static const primarySoft = Color(0xFFFDEEEA);
+  static const success = Color(0xFF1E9E5A);
+  static const successSoft = Color(0xFFE6F6EE);
+  static const danger = Color(0xFFD93B2B);
+  static const dangerSoft = Color(0xFFFDECEA);
+  static const info = Color(0xFF4B5FD6);
+  static const infoSoft = Color(0xFFEBEDFC);
+}
+
+class AppTheme {
+  static ThemeData get light {
+    final scheme =
+        ColorScheme.fromSeed(
+          seedColor: AppColors.primary,
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: AppColors.primary,
+          onPrimary: Colors.white,
+          surface: AppColors.surface,
+          onSurface: AppColors.text,
+          error: AppColors.danger,
+        );
+
+    final textTheme = GoogleFonts.nunitoSansTextTheme(
+      ThemeData(brightness: Brightness.light).textTheme,
+    ).apply(bodyColor: AppColors.text, displayColor: AppColors.text);
+
+    OutlineInputBorder border(Color color) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: color),
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      textTheme: textTheme,
+      scaffoldBackgroundColor: AppColors.bg,
+      dividerColor: AppColors.border,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: AppColors.bg,
+        foregroundColor: AppColors.text,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: border(AppColors.border),
+        enabledBorder: border(AppColors.border),
+        focusedBorder: border(AppColors.primary),
+        errorBorder: border(AppColors.danger),
+        focusedErrorBorder: border(AppColors.danger),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(48, 48),
+          shape: const StadiumBorder(),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          side: const BorderSide(color: AppColors.primary),
+          minimumSize: const Size(48, 48),
+          shape: const StadiumBorder(),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+      ),
+      navigationBarTheme: const NavigationBarThemeData(
+        backgroundColor: Colors.white,
+        indicatorColor: AppColors.primarySoft,
+      ),
+    );
+  }
+}
+// core/app_env.dart
+class AppEnv {
+  static const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  static const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+  static const envName = String.fromEnvironment('ENV_NAME', defaultValue: 'staging');
+
+  static bool get isProd => envName == 'prod';
+
+  static void assertConfigured() {
+    if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+      throw StateError(
+        'Missing SUPABASE_URL or SUPABASE_ANON_KEY. '
+        'Run with --dart-define-from-file=env/staging.json',
+      );
+    }
+  }
+}
+// core/app_router.dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../features/auth/login_page.dart';
+import '../features/dashboard/dashboard_page.dart';
+import '../features/inventory/history_page.dart';
+import '../features/inventory/order_form_page.dart';
+import '../features/items/item_detail_page.dart';
+import '../features/items/item_form_page.dart';
+import '../features/items/items_page.dart';
+import '../features/shell/app_shell.dart';
+import '../models/app_user.dart';
+import '../models/inventory_entry.dart';
+import '../providers/providers.dart';
+
+enum TransitionType {
+  none,
+  fade,
+  slide,
+  scale,
+  fadeSlide,
+}
+
+CustomTransitionPage<void> _buildTransitionPage({
+  required GoRouterState state,
+  required Widget child,
+  TransitionType transition = TransitionType.none,
+}) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 250),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      switch (transition) {
+        case TransitionType.none:
+          return child;
+
+        case TransitionType.fade:
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+
+        case TransitionType.slide:
+          return SlideTransition(
+            position: animation.drive(
+              Tween<Offset>(
+                begin: const Offset(1, 0),
+                end: Offset.zero,
+              ).chain(
+                CurveTween(curve: Curves.easeInOut),
+              ),
+            ),
+            child: child,
+          );
+
+        case TransitionType.scale:
+          return ScaleTransition(
+            scale: animation.drive(
+              Tween<double>(
+                begin: 0.9,
+                end: 1,
+              ).chain(
+                CurveTween(curve: Curves.easeOut),
+              ),
+            ),
+            child: child,
+          );
+
+        case TransitionType.fadeSlide:
+          final slideAnimation = animation.drive(
+            Tween<Offset>(
+              begin: const Offset(0.08, 0),
+              end: Offset.zero,
+            ).chain(
+              CurveTween(curve: Curves.easeOut),
+            ),
+          );
+
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: slideAnimation,
+              child: child,
+            ),
+          );
+      }
+    },
+  );
+}
+
+final routerProvider = Provider<GoRouter>((ref) {
+  // Refresh redirects when authentication state changes.
+  final refresh = ValueNotifier<int>(0);
+
+  ref.listen<AppUser?>(
+    authProvider,
+    (_, __) => refresh.value++,
+  );
+
+  ref.onDispose(refresh.dispose);
+
+  return GoRouter(
+    initialLocation: '/',
+    refreshListenable: refresh,
+    redirect: (context, state) {
+      final loggedIn = ref.read(authProvider) != null;
+      final atLogin = state.matchedLocation == '/login';
+
+      if (!loggedIn) {
+        return atLogin ? null : '/login';
+      }
+
+      if (atLogin) {
+        return '/';
+      }
+
+      return null;
+    },
+    routes: [
+      // Authentication
+      GoRoute(
+        path: '/login',
+        pageBuilder: (context, state) => _buildTransitionPage(
+          state: state,
+          child: const LoginPage(),
+          transition: TransitionType.fade,
+        ),
+      ),
+
+      // Pages with sidebar / bottom navigation
+      ShellRoute(
+        builder: (context, state, child) => AppShell(child: child),
+
+        routes: [
+          GoRoute(
+            path: '/',
+            pageBuilder: (context, state) => _buildTransitionPage(
+              state: state,
+              child: const DashboardPage(),
+              transition: TransitionType.slide,
+            ),
+          ),
+          GoRoute(
+            path: '/items',
+            pageBuilder: (context, state) => _buildTransitionPage(
+              state: state,
+              child: const ItemsPage(),
+              transition: TransitionType.slide,
+            ),
+          ),
+          GoRoute(
+            path: '/history',
+            pageBuilder: (context, state) => _buildTransitionPage(
+              state: state,
+              child: const HistoryPage(),
+              transition: TransitionType.slide,
+            ),
+          ),
+        ],
+      ),
+
+      // Full pages
+      GoRoute(
+        path: '/items/new',
+        pageBuilder: (context, state) => _buildTransitionPage(
+          state: state,
+          child: const ItemFormPage(),
+          transition: TransitionType.slide,
+        ),
+      ),
+      GoRoute(
+        path: '/items/:id',
+        pageBuilder: (context, state) => _buildTransitionPage(
+          state: state,
+          child: ItemDetailPage(
+            itemId: state.pathParameters['id']!,
+          ),
+          transition: TransitionType.slide,
+        ),
+      ),
+      GoRoute(
+        path: '/items/:id/edit',
+        pageBuilder: (context, state) => _buildTransitionPage(
+          state: state,
+          child: ItemFormPage(
+            itemId: state.pathParameters['id'],
+          ),
+          transition: TransitionType.slide,
+        ),
+      ),
+      GoRoute(
+        path: '/orders/:type',
+        pageBuilder: (context, state) => _buildTransitionPage(
+          state: state,
+          child: OrderFormPage(
+            type: EntryType.values.asNameMap()[state.pathParameters['type']] ?? EntryType.supply,
+            presetItemId: state.uri.queryParameters['item'],
+          ),
+          transition: TransitionType.slide,
+        ),
+      ),
+    ],
+  );
+});
+// core/app_exception.dart
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+
+class AppException implements Exception {
+  const AppException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Turns any error into a short message that is safe to show to the user.
+String errorMessage(Object error) {
+  if (error is AppException) return error.message;
+  if (error is PostgrestException) {
+    if (error.code == '23505') {
+      return 'This value already exists. Please use a different one.';
+    }
+    return error.message;
+  }
+  return 'Something went wrong. Please try again.';
+}
+// core/responsive.dart
+import 'package:flutter/widgets.dart';
+
+class Responsive {
+  static const double mobileMax = 700;
+  static const double desktopMin = 1000;
+
+  static bool isMobile(BuildContext context) => MediaQuery.sizeOf(context).width < mobileMax;
+
+  static bool isDesktop(BuildContext context) => MediaQuery.sizeOf(context).width >= desktopMin;
+}
+// core/app_svgs.dart
+// Replace any string below with your own SVG. Keep the same names.
+// The app colors icons itself, so the fill/stroke color inside the SVG does not matter.
+
+class AppSvgs {
+  static const String homeIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v10H3z"/></svg>''';
+
+  static const String itemsIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>''';
+
+  static const String historyIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>''';
+
+  static const String supplyIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>''';
+
+  static const String saleIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M7 14l5-5 5 5M4 4h16"/></svg>''';
+
+  static const String manualIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M12 4v16"/><circle cx="12" cy="12" r="9"/></svg>''';
+
+  static const String editIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>''';
+
+  static const String deleteIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>''';
+
+  static const String searchIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>''';
+
+  static const String filterIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>''';
+
+  static const String sortIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg>''';
+
+  static const String gridIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>''';
+
+  static const String listIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>''';
+
+  static const String tableIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>''';
+
+  static const String addIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>''';
+
+  static const String closeIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>''';
+
+  static const String logoutIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg>''';
+
+  static const String calendarIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>''';
+
+  static const String imageIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>''';
+
+  static const String chevronLeftIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>''';
+
+  static const String chevronRightIcon =
+      '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>''';
+}
+// providers/providers.dart
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show Supabase, SupabaseClient;
+
+import '../models/app_user.dart';
+import '../models/inventory_entry.dart';
+import '../models/item.dart';
+import '../models/lookup.dart';
+import '../repositories/auth_repository.dart';
+import '../repositories/inventory_repository.dart';
+import '../repositories/item_repository.dart';
+
+// ---------- Core ----------
+
+/// Overridden in main.dart.
+final sharedPrefsProvider = Provider<SharedPreferences>(
+  (ref) => throw UnimplementedError('sharedPrefsProvider not overridden'),
+);
+
+final supabaseProvider = Provider<SupabaseClient>((ref) => Supabase.instance.client);
+
+final authRepositoryProvider = Provider((ref) => AuthRepository(ref.watch(supabaseProvider)));
+final itemRepositoryProvider = Provider((ref) => ItemRepository(ref.watch(supabaseProvider)));
+final inventoryRepositoryProvider = Provider((ref) => InventoryRepository(ref.watch(supabaseProvider)));
+
+// ---------- Auth ----------
+
+class AuthNotifier extends Notifier<AppUser?> {
+  static const _key = 'app_user';
+
+  @override
+  AppUser? build() {
+    final raw = ref.read(sharedPrefsProvider).getString(_key);
+    if (raw == null) return null;
+    try {
+      return AppUser.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> login(String username, String password) async {
+    final user = await ref.read(authRepositoryProvider).login(username, password);
+    await ref.read(sharedPrefsProvider).setString(_key, jsonEncode(user.toJson()));
+    state = user;
+  }
+
+  Future<void> logout() async {
+    await ref.read(sharedPrefsProvider).remove(_key);
+    state = null;
+  }
+}
+
+final authProvider = NotifierProvider<AuthNotifier, AppUser?>(AuthNotifier.new);
+
+// ---------- Data ----------
+
+final itemsProvider = FutureProvider.autoDispose<List<Item>>(
+  (ref) => ref.watch(itemRepositoryProvider).fetchItems(),
+);
+
+final itemProvider = FutureProvider.autoDispose.family<Item, String>(
+  (ref, id) => ref.watch(itemRepositoryProvider).fetchItem(id),
+);
+
+final brandsProvider = FutureProvider.autoDispose<List<Lookup>>(
+  (ref) => ref.watch(itemRepositoryProvider).fetchBrands(),
+);
+
+final categoriesProvider = FutureProvider.autoDispose<List<Lookup>>(
+  (ref) => ref.watch(itemRepositoryProvider).fetchCategories(),
+);
+
+/// Entries for one day. Pass a date with no time (year, month, day).
+final entriesByDayProvider = FutureProvider.autoDispose.family<List<InventoryEntry>, DateTime>(
+  (ref, day) => ref.watch(inventoryRepositoryProvider).fetchEntries(from: day, to: day),
+);
+
+typedef HistoryQuery = ({EntryType? type, DateTime? from, DateTime? to});
+
+final historyProvider = FutureProvider.autoDispose.family<List<InventoryEntry>, HistoryQuery>(
+  (ref, q) => ref.watch(inventoryRepositoryProvider).fetchEntries(from: q.from, to: q.to, type: q.type),
+);
+
+final itemHistoryProvider = FutureProvider.autoDispose.family<List<ItemHistoryRow>, String>(
+  (ref, itemId) => ref.watch(inventoryRepositoryProvider).fetchItemHistory(itemId),
+);
+
+/// Call after any change so every screen reloads fresh data.
+void refreshAll(WidgetRef ref) {
+  ref.invalidate(itemsProvider);
+  ref.invalidate(itemProvider);
+  ref.invalidate(brandsProvider);
+  ref.invalidate(categoriesProvider);
+  ref.invalidate(entriesByDayProvider);
+  ref.invalidate(historyProvider);
+  ref.invalidate(itemHistoryProvider);
+}
+// features/auth/login_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/app_env.dart';
+import '../../core/app_exception.dart';
+import '../../core/app_theme.dart';
+import '../../core/widgets.dart';
+import '../../providers/providers.dart';
+
+class LoginPage extends ConsumerStatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  ConsumerState<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends ConsumerState<LoginPage> {
+  final _username = TextEditingController();
+  final _password = TextEditingController();
+  bool _busy = false;
+  bool _hidePassword = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _username.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final username = _username.text.trim();
+    final password = _password.text;
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => _error = 'Enter your username and password.');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(authProvider.notifier).login(username, password);
+      // On success the router moves to the dashboard.
+    } catch (e) {
+      if (mounted) setState(() => _error = errorMessage(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: AppCard(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Bar Inventory',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    AppEnv.isProd ? 'Sign in to continue' : 'Sign in to continue (${AppEnv.envName})',
+                    style: const TextStyle(color: AppColors.textSoft),
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: _username,
+                    enabled: !_busy,
+                    autofocus: true,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const [AutofillHints.username],
+                    decoration: const InputDecoration(labelText: 'Username'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _password,
+                    enabled: !_busy,
+                    obscureText: _hidePassword,
+                    onSubmitted: (_) => _submit(),
+                    autofillHints: const [AutofillHints.password],
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      suffix: TextButton(
+                        onPressed: () => setState(() => _hidePassword = !_hidePassword),
+                        child: Text(_hidePassword ? 'Show' : 'Hide'),
+                      ),
+                    ),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      _error!,
+                      style: const TextStyle(color: AppColors.danger),
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  FilledButton(
+                    onPressed: _busy ? null : _submit,
+                    child: _busy
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Log in'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+// features/shell/app_shell.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/app_env.dart';
+import '../../core/app_svgs.dart';
+import '../../core/app_theme.dart';
+import '../../core/responsive.dart';
+import '../../core/widgets.dart';
+import '../../providers/providers.dart';
+
+typedef _Tab = ({String path, String label, String icon});
+
+/// Sidebar on wide screens, bottom navigation on phones and tablets.
+class AppShell extends ConsumerWidget {
+  const AppShell({super.key, required this.child});
+
+  final Widget child;
+
+  static const List<_Tab> _tabs = [
+    (path: '/', label: 'Dashboard', icon: AppSvgs.homeIcon),
+    (path: '/items', label: 'Items', icon: AppSvgs.itemsIcon),
+    (path: '/history', label: 'History', icon: AppSvgs.historyIcon),
+  ];
+
+  int _indexFor(String location) {
+    if (location.startsWith('/items')) return 1;
+    if (location.startsWith('/history')) return 2;
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final location = GoRouterState.of(context).uri.path;
+    final index = _indexFor(location);
+    final user = ref.watch(authProvider);
+    void logout() => ref.read(authProvider.notifier).logout();
+
+    if (Responsive.isDesktop(context)) {
+      return Scaffold(
+        body: Row(
+          children: [
+            _Sidebar(
+              tabs: _tabs,
+              selected: index,
+              userName: user?.displayName ?? '',
+              onLogout: logout,
+            ),
+            Expanded(child: child),
+          ],
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Row(
+          children: [
+            Text('Bar Inventory', style: TextStyle(fontWeight: FontWeight.w700)),
+            SizedBox(width: 8),
+            _EnvBadge(),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Log out',
+            onPressed: logout,
+            icon: AppIcon(AppSvgs.logoutIcon, color: AppColors.text),
+          ),
+        ],
+      ),
+      body: child,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: index,
+        onDestinationSelected: (i) => context.go(_tabs[i].path),
+        destinations: [
+          for (final t in _tabs)
+            NavigationDestination(
+              icon: AppIcon(t.icon, color: AppColors.textSoft),
+              selectedIcon: AppIcon(t.icon, color: AppColors.primary),
+              label: t.label,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Sidebar extends StatelessWidget {
+  const _Sidebar({
+    required this.tabs,
+    required this.selected,
+    required this.userName,
+    required this.onLogout,
+  });
+
+  final List<_Tab> tabs;
+  final int selected;
+  final String userName;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      decoration: const BoxDecoration(
+        border: Border(right: BorderSide(color: AppColors.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                Text(
+                  'Bar Inventory',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                SizedBox(width: 8),
+                _EnvBadge(),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          for (var i = 0; i < tabs.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: _NavTile(
+                tab: tabs[i],
+                selected: i == selected,
+                onTap: () => context.go(tabs[i].path),
+              ),
+            ),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              userName,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: onLogout,
+              icon: AppIcon(AppSvgs.logoutIcon, size: 18, color: AppColors.primary),
+              label: const Text('Log out'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavTile extends StatelessWidget {
+  const _NavTile({required this.tab, required this.selected, required this.onTap});
+
+  final _Tab tab;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? Colors.white : Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              AppIcon(
+                tab.icon,
+                color: selected ? AppColors.primary : AppColors.textSoft,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                tab.label,
+                style: TextStyle(
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  color: selected ? AppColors.text : AppColors.textSoft,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small label shown only outside prod.
+class _EnvBadge extends StatelessWidget {
+  const _EnvBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    if (AppEnv.isProd) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        AppEnv.envName.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+}
+// features/dashboard/dashboard_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
+
+import '../../core/app_svgs.dart';
+import '../../core/app_theme.dart';
+import '../../core/widgets.dart';
+import '../../models/inventory_entry.dart';
+import '../../providers/providers.dart';
+import '../inventory/history_page.dart' show EntryCard;
+
+DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+class DashboardPage extends ConsumerStatefulWidget {
+  const DashboardPage({super.key});
+
+  @override
+  ConsumerState<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends ConsumerState<DashboardPage> {
+  late DateTime _selected = _dateOnly(DateTime.now());
+  late DateTime _focused = _selected;
+  CalendarFormat _format = CalendarFormat.week;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: PageContainer(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            PageHeader(
+              title: 'Dashboard',
+              subtitle: DateFormat('EEEE, d MMMM yyyy').format(DateTime.now()),
+            ),
+            const SizedBox(height: 20),
+            const _Actions(),
+            const SizedBox(height: 20),
+            LayoutBuilder(
+              builder: (context, c) {
+                final calendar = _calendar();
+                final log = _log();
+                if (c.maxWidth < 900) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [calendar, const SizedBox(height: 20), log],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(width: 380, child: calendar),
+                    const SizedBox(width: 20),
+                    Expanded(child: log),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _calendar() {
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: TableCalendar(
+        firstDay: DateTime(2020),
+        lastDay: DateTime(2100),
+        focusedDay: _focused,
+        calendarFormat: _format,
+        startingDayOfWeek: StartingDayOfWeek.monday,
+        availableCalendarFormats: const {
+          CalendarFormat.week: 'Month',
+          CalendarFormat.month: 'Week',
+        },
+        selectedDayPredicate: (d) => isSameDay(d, _selected),
+        onDaySelected: (selected, focused) => setState(() {
+          _selected = _dateOnly(selected);
+          _focused = focused;
+        }),
+        onFormatChanged: (f) => setState(() => _format = f),
+        onPageChanged: (focused) => _focused = focused,
+        headerStyle: const HeaderStyle(
+          titleCentered: true,
+          formatButtonShowsNext: false,
+          titleTextStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        calendarStyle: const CalendarStyle(
+          outsideDaysVisible: false,
+          selectedDecoration: BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+          ),
+          todayDecoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            shape: BoxShape.circle,
+          ),
+          todayTextStyle: TextStyle(
+            color: AppColors.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _log() {
+    final isToday = isSameDay(_selected, DateTime.now());
+    final async = ref.watch(entriesByDayProvider(_selected));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                isToday ? 'Today' : DateFormat('EEE, d MMM yyyy').format(_selected),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (!isToday)
+              TextButton(
+                onPressed: () => setState(() {
+                  _selected = _dateOnly(DateTime.now());
+                  _focused = _selected;
+                }),
+                child: const Text('Go to today'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        async.when(
+          loading: () => const SizedBox(height: 120, child: LoadingView()),
+          error: (e, _) => ErrorState(
+            error: e,
+            onRetry: () => ref.invalidate(entriesByDayProvider(_selected)),
+          ),
+          data: (entries) {
+            if (entries.isEmpty) {
+              return const EmptyState(message: 'No sales or supplies on this day.');
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _summary(entries),
+                const SizedBox(height: 12),
+                for (final e in entries)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: EntryCard(entry: e),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _summary(List<InventoryEntry> entries) {
+    var supply = 0;
+    var sale = 0;
+    var manual = 0;
+    for (final e in entries) {
+      switch (e.type) {
+        case EntryType.supply:
+          supply += e.totalUnits;
+        case EntryType.sale:
+          sale += e.totalUnits;
+        case EntryType.manual:
+          manual += 1;
+      }
+    }
+    return Row(
+      children: [
+        Expanded(child: _Stat('Supplied', '$supply', AppColors.success)),
+        const SizedBox(width: 10),
+        Expanded(child: _Stat('Sold', '$sale', AppColors.primary)),
+        const SizedBox(width: 10),
+        Expanded(child: _Stat('Adjustments', '$manual', AppColors.info)),
+      ],
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  const _Stat(this.label, this.value, this.color);
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: AppColors.textSoft),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Actions extends StatelessWidget {
+  const _Actions();
+
+  @override
+  Widget build(BuildContext context) {
+    final actions = <({String label, String icon, Color color, Color soft, VoidCallback onTap})>[
+      (
+        label: 'Items',
+        icon: AppSvgs.itemsIcon,
+        color: AppColors.text,
+        soft: AppColors.bg,
+        onTap: () => context.go('/items'),
+      ),
+      (
+        label: 'Inventory History',
+        icon: AppSvgs.historyIcon,
+        color: AppColors.text,
+        soft: AppColors.bg,
+        onTap: () => context.go('/history'),
+      ),
+      (
+        label: 'New Supply Order',
+        icon: AppSvgs.supplyIcon,
+        color: AppColors.success,
+        soft: AppColors.successSoft,
+        onTap: () => context.push('/orders/supply'),
+      ),
+      (
+        label: 'New Sale Order',
+        icon: AppSvgs.saleIcon,
+        color: AppColors.primary,
+        soft: AppColors.primarySoft,
+        onTap: () => context.push('/orders/sale'),
+      ),
+      (
+        label: 'Adjust Stock',
+        icon: AppSvgs.manualIcon,
+        color: AppColors.info,
+        soft: AppColors.infoSoft,
+        onTap: () => context.push('/orders/manual'),
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        const gap = 12.0;
+        final cols = c.maxWidth >= 900 ? 5 : (c.maxWidth >= 560 ? 3 : 2);
+        final tileWidth = (c.maxWidth - gap * (cols - 1)) / cols;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final a in actions)
+              SizedBox(
+                width: tileWidth,
+                child: AppCard(
+                  padding: const EdgeInsets.all(14),
+                  onTap: a.onTap,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: a.soft,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: AppIcon(a.icon, size: 20, color: a.color),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          a.label,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+// features/inventory/history_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
+import '../../core/app_svgs.dart';
+import '../../core/app_theme.dart';
+import '../../core/widgets.dart';
+import '../../models/inventory_entry.dart';
+import '../../providers/providers.dart';
+
+DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// One supply, sale, or manual entry with its item lines.
+class EntryCard extends StatelessWidget {
+  const EntryCard({super.key, required this.entry, this.showDate = false});
+
+  final InventoryEntry entry;
+  final bool showDate;
+
+  @override
+  Widget build(BuildContext context) {
+    final e = entry;
+    final refLabel = switch (e.type) {
+      EntryType.sale => 'Voucher',
+      EntryType.supply => 'Invoice / slip',
+      EntryType.manual => 'Ref',
+    };
+    final meta = [
+      if (showDate) DateFormat('d MMM yyyy').format(e.entryDate),
+      'by ${e.createdByName}',
+      DateFormat('h:mm a').format(e.createdAt),
+    ].join(' · ');
+    final hasRef = e.referenceNo != null && e.referenceNo!.isNotEmpty;
+    final hasNote = e.note != null && e.note!.isNotEmpty;
+
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              TypeChip(e.type),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  hasRef ? '$refLabel ${e.referenceNo}' : '',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Text(
+                '${e.lines.length} ${e.lines.length == 1 ? 'item' : 'items'}',
+                style: const TextStyle(color: AppColors.textSoft, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            meta,
+            style: const TextStyle(color: AppColors.textSoft, fontSize: 12),
+          ),
+          const Divider(height: 20),
+          for (final l in e.lines)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l.itemSubtitle.isEmpty ? l.itemName : '${l.itemName} (${l.itemSubtitle})',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    signed(l.quantityChange),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: l.quantityChange > 0 ? AppColors.success : AppColors.danger,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (hasNote)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                e.note!,
+                style: const TextStyle(
+                  color: AppColors.textSoft,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class HistoryPage extends ConsumerStatefulWidget {
+  const HistoryPage({super.key});
+
+  @override
+  ConsumerState<HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends ConsumerState<HistoryPage> {
+  static const _limit = 200;
+  static final _fmt = DateFormat('d MMM yyyy');
+
+  EntryType? _type;
+  // Default: last 30 days. Use "Clear dates" to see everything.
+  DateTime? _from = _dateOnly(DateTime.now().subtract(const Duration(days: 30)));
+  DateTime? _to;
+
+  Future<void> _pickRange() async {
+    final today = _dateOnly(DateTime.now());
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: today,
+      initialDateRange: _from == null ? null : DateTimeRange(start: _from!, end: _to ?? today),
+    );
+    if (picked != null) {
+      setState(() {
+        _from = _dateOnly(picked.start);
+        _to = _dateOnly(picked.end);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = (type: _type, from: _from, to: _to);
+    final async = ref.watch(historyProvider(query));
+
+    return PageContainer(
+      maxWidth: 900,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const PageHeader(title: 'Inventory History'),
+          const SizedBox(height: 16),
+          _filters(),
+          const SizedBox(height: 12),
+          Expanded(
+            child: async.when(
+              loading: () => const LoadingView(),
+              error: (e, _) => ErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(historyProvider(query)),
+              ),
+              data: (entries) {
+                if (entries.isEmpty) {
+                  return const EmptyState(message: 'No entries found.');
+                }
+                // Insert a date heading whenever the date changes
+                final rows = <Object>[];
+                DateTime? last;
+                for (final e in entries) {
+                  if (last == null || e.entryDate != last) {
+                    rows.add(e.entryDate);
+                    last = e.entryDate;
+                  }
+                  rows.add(e);
+                }
+                final showLimitNote = entries.length >= _limit;
+
+                return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  itemCount: rows.length + (showLimitNote ? 1 : 0),
+                  itemBuilder: (context, i) {
+                    if (i == rows.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          'Showing the latest 200 entries. Narrow the dates to see older ones.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppColors.textSoft),
+                        ),
+                      );
+                    }
+                    final row = rows[i];
+                    if (row is DateTime) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 12, bottom: 8),
+                        child: Text(
+                          DateFormat('EEEE, d MMM yyyy').format(row),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSoft,
+                          ),
+                        ),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: EntryCard(entry: row as InventoryEntry),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filters() {
+    final dateLabel = _from == null ? 'All dates' : '${_fmt.format(_from!)} - ${_to == null ? 'today' : _fmt.format(_to!)}';
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final t in [null, ...EntryType.values])
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text(t?.label ?? 'All'),
+                selected: _type == t,
+                showCheckmark: false,
+                selectedColor: AppColors.primarySoft,
+                backgroundColor: Colors.white,
+                side: BorderSide(
+                  color: _type == t ? AppColors.primary : AppColors.border,
+                ),
+                onSelected: (_) => setState(() => _type = t),
+              ),
+            ),
+          const SizedBox(width: 8),
+          ActionChip(
+            avatar: AppIcon(
+              AppSvgs.calendarIcon,
+              size: 16,
+              color: AppColors.textSoft,
+            ),
+            label: Text(dateLabel),
+            backgroundColor: Colors.white,
+            side: const BorderSide(color: AppColors.border),
+            onPressed: _pickRange,
+          ),
+          if (_from != null) ...[
+            const SizedBox(width: 8),
+            ActionChip(
+              label: const Text('Clear dates'),
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: AppColors.border),
+              onPressed: () => setState(() {
+                _from = null;
+                _to = null;
+              }),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+// features/inventory/order_form_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
+import '../../core/app_exception.dart';
+import '../../core/app_svgs.dart';
+import '../../core/app_theme.dart';
+import '../../core/widgets.dart';
+import '../../models/inventory_entry.dart';
+import '../../models/item.dart';
+import '../../providers/providers.dart';
+
+/// One row in the order: an item and the quantity typed for it.
+class _Line {
+  _Line(this.item, String initial) : controller = TextEditingController(text: initial);
+
+  final Item item;
+  final TextEditingController controller;
+
+  int get qty => int.tryParse(controller.text.trim()) ?? 0;
+}
+
+class OrderFormPage extends ConsumerStatefulWidget {
+  const OrderFormPage({super.key, required this.type, this.presetItemId});
+
+  final EntryType type;
+
+  /// When opened from Item Detail, this item is added automatically.
+  final String? presetItemId;
+
+  @override
+  ConsumerState<OrderFormPage> createState() => _OrderFormPageState();
+}
+
+class _OrderFormPageState extends ConsumerState<OrderFormPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _reference = TextEditingController();
+  final _note = TextEditingController();
+  final Map<String, _Line> _lines = {};
+  final List<TextEditingController> _removed = [];
+  DateTime _date = _today();
+  bool _busy = false;
+
+  static DateTime _today() {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
+
+  bool get _isManual => widget.type == EntryType.manual;
+  bool get _isSale => widget.type == EntryType.sale;
+
+  String get _title => switch (widget.type) {
+    EntryType.supply => 'New supply order',
+    EntryType.sale => 'New sale order',
+    EntryType.manual => 'Adjust stock',
+  };
+
+  String get _hint => switch (widget.type) {
+    EntryType.supply => 'Items you received. Stock goes up.',
+    EntryType.sale => 'Items sold. Stock goes down.',
+    EntryType.manual => 'Enter how much to add (+) or remove (-) for each item.',
+  };
+
+  String get _saveLabel => switch (widget.type) {
+    EntryType.supply => 'Save supply order',
+    EntryType.sale => 'Save sale order',
+    EntryType.manual => 'Save adjustment',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.presetItemId;
+    if (id != null && id.isNotEmpty) _loadPreset(id);
+  }
+
+  @override
+  void dispose() {
+    _reference.dispose();
+    _note.dispose();
+    for (final l in _lines.values) {
+      l.controller.dispose();
+    }
+    for (final c in _removed) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadPreset(String id) async {
+    try {
+      final item = await ref.read(itemRepositoryProvider).fetchItem(id);
+      if (!mounted) return;
+      setState(() => _addLine(item));
+    } catch (_) {
+      // If the item cannot load, the user can still add items manually.
+    }
+  }
+
+  void _addLine(Item item) {
+    _lines.putIfAbsent(item.id, () => _Line(item, _isManual ? '' : '1'));
+  }
+
+  void _removeLine(String id) {
+    final line = _lines.remove(id);
+    if (line != null) _removed.add(line.controller);
+  }
+
+  void _toggle(Item item) {
+    setState(() {
+      if (_lines.containsKey(item.id)) {
+        _removeLine(item.id);
+      } else {
+        _addLine(item);
+      }
+    });
+  }
+
+  /// Stock change this line will cause.
+  int _delta(_Line l) => switch (widget.type) {
+    EntryType.supply => l.qty,
+    EntryType.sale => -l.qty,
+    EntryType.manual => l.qty,
+  };
+
+  /// Quick check on screen. The database does the final check.
+  String? _lineError(_Line l) {
+    final q = l.qty;
+    switch (widget.type) {
+      case EntryType.supply:
+        if (q <= 0) return 'Enter a quantity above 0';
+      case EntryType.sale:
+        if (q <= 0) return 'Enter a quantity above 0';
+        if (q > l.item.stock) return 'Only ${l.item.stock} in stock';
+      case EntryType.manual:
+        if (q == 0) return 'Enter an amount (+ or -)';
+        if (l.item.stock + q < 0) {
+          return 'Stock cannot go below 0 (now ${l.item.stock})';
+        }
+    }
+    return null;
+  }
+
+  bool get _canSave => _lines.isNotEmpty && _lines.values.every((l) => _lineError(l) == null);
+
+  void _step(_Line l, int by) {
+    var next = l.qty + by;
+    if (!_isManual && next < 1) next = 1;
+    setState(() => l.controller.text = '$next');
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2020),
+      lastDate: _today(),
+    );
+    if (picked != null) {
+      setState(() => _date = DateTime(picked.year, picked.month, picked.day));
+    }
+  }
+
+  Future<void> _openPicker() {
+    return showDialog<void>(
+      context: context,
+      builder: (_) => _ItemPickerDialog(
+        type: widget.type,
+        isAdded: (id) => _lines.containsKey(id),
+        onToggle: _toggle,
+      ),
+    );
+  }
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final user = ref.read(authProvider);
+    if (user == null || !_canSave) return;
+
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(inventoryRepositoryProvider)
+          .createEntry(
+            userId: user.id,
+            type: widget.type,
+            entryDate: _date,
+            quantities: {for (final l in _lines.values) l.item.id: l.qty},
+            referenceNo: _isManual ? null : _reference.text,
+            note: _note.text,
+          );
+      refreshAll(ref);
+      if (!mounted) return;
+      showMessage(context, 'Saved');
+      goBackOr(context, '/');
+    } catch (e) {
+      if (mounted) showMessage(context, errorMessage(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = _lines.length;
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: () => goBackOr(context, '/'),
+          icon: AppIcon(AppSvgs.chevronLeftIcon, color: AppColors.text),
+        ),
+        title: Text(_title),
+      ),
+      body: SingleChildScrollView(
+        child: PageContainer(
+          maxWidth: 760,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(_hint, style: const TextStyle(color: AppColors.textSoft)),
+                const SizedBox(height: 16),
+                if (!_isManual) ...[
+                  TextFormField(
+                    controller: _reference,
+                    decoration: InputDecoration(
+                      labelText: _isSale ? 'Voucher number' : 'Invoice / slip number (optional)',
+                    ),
+                    validator: _isSale ? (v) => (v == null || v.trim().isEmpty) ? 'Voucher number is required' : null : null,
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: _pickDate,
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Date',
+                      suffixIcon: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: AppIcon(
+                          AppSvgs.calendarIcon,
+                          size: 20,
+                          color: AppColors.textSoft,
+                        ),
+                      ),
+                    ),
+                    child: Text(DateFormat('EEE, d MMM yyyy').format(_date)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _note,
+                  decoration: InputDecoration(
+                    labelText: _isManual ? 'Reason (optional)' : 'Note (optional)',
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Items',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _openPicker,
+                      icon: AppIcon(AppSvgs.addIcon, size: 18, color: AppColors.primary),
+                      label: const Text('Add items'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (_lines.isEmpty)
+                  const AppCard(
+                    child: Center(
+                      child: Text(
+                        'No items yet. Tap "Add items".',
+                        style: TextStyle(color: AppColors.textSoft),
+                      ),
+                    ),
+                  )
+                else
+                  for (final l in _lines.values)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _lineCard(l),
+                    ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Center(
+          heightFactor: 1,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: (_busy || !_canSave) ? null : _save,
+                  child: _busy
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          count == 0 ? _saveLabel : '$_saveLabel ($count ${count == 1 ? 'item' : 'items'})',
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _lineCard(_Line l) {
+    final err = _lineError(l);
+    final showErr = err != null && l.controller.text.trim().isNotEmpty;
+    final stockText = l.qty != 0 ? 'Stock: ${l.item.stock}  →  ${l.item.stock + _delta(l)}' : 'Stock: ${l.item.stock}';
+
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ItemThumb(url: l.item.imageUrl, size: 48),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l.item.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    if (l.item.subtitle.isNotEmpty)
+                      Text(
+                        l.item.subtitle,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSoft,
+                        ),
+                      ),
+                    const SizedBox(height: 2),
+                    Text(
+                      stockText,
+                      style: const TextStyle(fontSize: 12, color: AppColors.textSoft),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove',
+                onPressed: () => setState(() => _removeLine(l.item.id)),
+                icon: AppIcon(AppSvgs.closeIcon, size: 18, color: AppColors.textSoft),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: showErr
+                    ? Text(
+                        err,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.danger,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              _StepButton(label: '-', onTap: () => _step(l, -1)),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 72,
+                child: TextField(
+                  controller: l.controller,
+                  textAlign: TextAlign.center,
+                  keyboardType: TextInputType.numberWithOptions(signed: _isManual),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                      RegExp(_isManual ? r'[0-9-]' : r'[0-9]'),
+                    ),
+                    LengthLimitingTextInputFormatter(6),
+                  ],
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: '0',
+                    contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _StepButton(label: '+', onTap: () => _step(l, 1)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepButton extends StatelessWidget {
+  const _StepButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Tap items to add or remove them. The dialog stays open so you can add many.
+class _ItemPickerDialog extends ConsumerStatefulWidget {
+  const _ItemPickerDialog({
+    required this.type,
+    required this.isAdded,
+    required this.onToggle,
+  });
+
+  final EntryType type;
+  final bool Function(String id) isAdded;
+  final void Function(Item item) onToggle;
+
+  @override
+  ConsumerState<_ItemPickerDialog> createState() => _ItemPickerDialogState();
+}
+
+class _ItemPickerDialogState extends ConsumerState<_ItemPickerDialog> {
+  String _q = '';
+
+  bool _matches(Item i) {
+    if (_q.isEmpty) return true;
+    final text = [
+      i.name,
+      i.itemSerial,
+      i.brandName ?? '',
+      i.categoryName ?? '',
+      i.variation,
+      i.size,
+    ].join(' ').toLowerCase();
+    return text.contains(_q);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(itemsProvider);
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 640),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Select items',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                autofocus: true,
+                onChanged: (v) => setState(() => _q = v.trim().toLowerCase()),
+                decoration: InputDecoration(
+                  hintText: 'Search items',
+                  prefixIcon: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: AppIcon(
+                      AppSvgs.searchIcon,
+                      size: 20,
+                      color: AppColors.textSoft,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: async.when(
+                  loading: () => const LoadingView(),
+                  error: (e, _) => ErrorState(
+                    error: e,
+                    onRetry: () => ref.invalidate(itemsProvider),
+                  ),
+                  data: (items) {
+                    final list = items.where(_matches).toList();
+                    if (list.isEmpty) {
+                      return const EmptyState(message: 'No items found.');
+                    }
+                    return ListView.builder(
+                      itemCount: list.length,
+                      itemBuilder: (context, i) {
+                        final item = list[i];
+                        final added = widget.isAdded(item.id);
+                        final blocked = widget.type == EntryType.sale && item.stock == 0;
+                        final sub = [item.subtitle, item.brandName ?? ''].where((s) => s.isNotEmpty).join(' · ');
+
+                        return ListTile(
+                          enabled: !blocked || added,
+                          leading: ItemThumb(url: item.imageUrl, size: 40),
+                          title: Text(item.name),
+                          subtitle: sub.isEmpty ? null : Text(sub),
+                          trailing: Text(
+                            added ? 'Added' : '${item.stock}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: added ? AppColors.success : (item.stock == 0 ? AppColors.danger : AppColors.text),
+                            ),
+                          ),
+                          onTap: () {
+                            widget.onToggle(item);
+                            setState(() {});
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+// features/items/items_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/app_svgs.dart';
+import '../../core/app_theme.dart';
+import '../../core/widgets.dart';
+import '../../models/item.dart';
+import '../../providers/providers.dart';
+
+enum _ViewMode { grid, list, table }
+
+enum _Sort { nameAsc, nameDesc, stockLow, stockHigh, newest }
+
+enum _StockFilter { all, inStock, outOfStock }
+
+const _stockLabels = {
+  _StockFilter.all: 'All',
+  _StockFilter.inStock: 'In stock',
+  _StockFilter.outOfStock: 'Out of stock',
+};
+
+const _sortLabels = {
+  _Sort.nameAsc: 'Name A-Z',
+  _Sort.nameDesc: 'Name Z-A',
+  _Sort.stockLow: 'Stock low-high',
+  _Sort.stockHigh: 'Stock high-low',
+  _Sort.newest: 'Newest',
+};
+
+class ItemsPage extends ConsumerStatefulWidget {
+  const ItemsPage({super.key});
+
+  @override
+  ConsumerState<ItemsPage> createState() => _ItemsPageState();
+}
+
+class _ItemsPageState extends ConsumerState<ItemsPage> {
+  String _query = '';
+  String _brandId = ''; // '' means all
+  String _categoryId = '';
+  _StockFilter _stock = _StockFilter.all;
+  _Sort _sort = _Sort.nameAsc;
+  _ViewMode _view = _ViewMode.grid;
+
+  /// Search, filter, and sort on the device. Fine for a bar-sized item list.
+  List<Item> _apply(List<Item> items) {
+    final q = _query.trim().toLowerCase();
+    final list = items.where((i) {
+      if (_brandId.isNotEmpty && i.brandId != _brandId) return false;
+      if (_categoryId.isNotEmpty && i.categoryId != _categoryId) return false;
+      if (_stock == _StockFilter.inStock && i.stock == 0) return false;
+      if (_stock == _StockFilter.outOfStock && i.stock != 0) return false;
+      if (q.isEmpty) return true;
+      final text = [
+        i.name,
+        i.itemSerial,
+        i.brandName ?? '',
+        i.categoryName ?? '',
+        i.variation,
+        i.size,
+        i.shortDesc,
+      ].join(' ').toLowerCase();
+      return text.contains(q);
+    }).toList();
+
+    int byName(Item a, Item b) => a.name.toLowerCase().compareTo(b.name.toLowerCase());
+
+    switch (_sort) {
+      case _Sort.nameAsc:
+        list.sort(byName);
+      case _Sort.nameDesc:
+        list.sort((a, b) => byName(b, a));
+      case _Sort.stockLow:
+        list.sort((a, b) => a.stock.compareTo(b.stock));
+      case _Sort.stockHigh:
+        list.sort((a, b) => b.stock.compareTo(a.stock));
+      case _Sort.newest:
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+    return list;
+  }
+
+  /// Brands or categories that exist in the item list. '' = All.
+  Map<String, String> _lookupOptions(List<Item> items, {required bool brand}) {
+    final found = <String, String>{};
+    for (final i in items) {
+      final id = brand ? i.brandId : i.categoryId;
+      final name = brand ? i.brandName : i.categoryName;
+      if (id != null) found[id] = name ?? '';
+    }
+    final sorted = found.entries.toList()..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    return {'': 'All', for (final e in sorted) e.key: e.value};
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(itemsProvider);
+
+    return PageContainer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PageHeader(
+            title: 'Items',
+            subtitle: async.hasValue ? '${async.requireValue.length} items' : null,
+            trailing: FilledButton.icon(
+              onPressed: () => context.push('/items/new'),
+              icon: AppIcon(AppSvgs.addIcon, size: 18, color: Colors.white),
+              label: const Text('New item'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            onChanged: (v) => setState(() => _query = v),
+            decoration: InputDecoration(
+              hintText: 'Search name, serial, brand...',
+              prefixIcon: Padding(
+                padding: const EdgeInsets.all(14),
+                child: AppIcon(
+                  AppSvgs.searchIcon,
+                  size: 20,
+                  color: AppColors.textSoft,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          async.when(
+            loading: () => const Expanded(child: LoadingView()),
+            error: (e, _) => Expanded(
+              child: ErrorState(
+                error: e,
+                onRetry: () => ref.invalidate(itemsProvider),
+              ),
+            ),
+            data: (items) {
+              final shown = _apply(items);
+              return Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _controls(items),
+                    const SizedBox(height: 14),
+                    Expanded(
+                      child: items.isEmpty
+                          ? EmptyState(
+                              message: 'No items yet. Create your first item.',
+                              action: FilledButton(
+                                onPressed: () => context.push('/items/new'),
+                                child: const Text('New item'),
+                              ),
+                            )
+                          : shown.isEmpty
+                          ? const EmptyState(
+                              message: 'No items match your search.',
+                            )
+                          : switch (_view) {
+                              _ViewMode.grid => _ItemGrid(items: shown),
+                              _ViewMode.list => _ItemList(items: shown),
+                              _ViewMode.table => _ItemTable(items: shown),
+                            },
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _controls(List<Item> items) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _MenuChip<String>(
+            label: 'Brand',
+            icon: AppSvgs.filterIcon,
+            value: _brandId,
+            options: _lookupOptions(items, brand: true),
+            onSelected: (v) => setState(() => _brandId = v),
+          ),
+          const SizedBox(width: 8),
+          _MenuChip<String>(
+            label: 'Category',
+            icon: AppSvgs.filterIcon,
+            value: _categoryId,
+            options: _lookupOptions(items, brand: false),
+            onSelected: (v) => setState(() => _categoryId = v),
+          ),
+          const SizedBox(width: 8),
+          _MenuChip<_StockFilter>(
+            label: 'Stock',
+            value: _stock,
+            options: _stockLabels,
+            onSelected: (v) => setState(() => _stock = v),
+          ),
+          const SizedBox(width: 8),
+          _MenuChip<_Sort>(
+            label: 'Sort',
+            icon: AppSvgs.sortIcon,
+            value: _sort,
+            options: _sortLabels,
+            onSelected: (v) => setState(() => _sort = v),
+          ),
+          const SizedBox(width: 12),
+          _ViewToggle(
+            value: _view,
+            onChanged: (v) => setState(() => _view = v),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A pill button that opens a small menu.
+class _MenuChip<T extends Object> extends StatelessWidget {
+  const _MenuChip({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onSelected,
+    this.icon,
+  });
+
+  final String label;
+  final String? icon;
+  final T value;
+  final Map<T, String> options;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<T>(
+      tooltip: label,
+      onSelected: onSelected,
+      itemBuilder: (_) => [
+        for (final e in options.entries) PopupMenuItem<T>(value: e.key, child: Text(e.value)),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              AppIcon(icon!, size: 16, color: AppColors.textSoft),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              '$label: ${options[value] ?? 'All'}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(width: 4),
+            RotatedBox(
+              quarterTurns: 1,
+              child: AppIcon(
+                AppSvgs.chevronRightIcon,
+                size: 14,
+                color: AppColors.textSoft,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewToggle extends StatelessWidget {
+  const _ViewToggle({required this.value, required this.onChanged});
+
+  final _ViewMode value;
+  final ValueChanged<_ViewMode> onChanged;
+
+  static const _icons = {
+    _ViewMode.grid: AppSvgs.gridIcon,
+    _ViewMode.list: AppSvgs.listIcon,
+    _ViewMode.table: AppSvgs.tableIcon,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final e in _icons.entries)
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => onChanged(e.key),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: e.key == value ? AppColors.primarySoft : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: AppIcon(
+                  e.value,
+                  size: 18,
+                  color: e.key == value ? AppColors.primary : AppColors.textSoft,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ItemGrid extends StatelessWidget {
+  const _ItemGrid({required this.items});
+
+  final List<Item> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: const EdgeInsets.only(bottom: 24),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 220,
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        childAspectRatio: 0.75,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, i) {
+        final item = items[i];
+        return AppCard(
+          padding: const EdgeInsets.all(10),
+          onTap: () => context.push('/items/${item.id}'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: ItemThumb(url: item.imageUrl, expand: true)),
+              const SizedBox(height: 8),
+              Text(
+                item.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              if (item.subtitle.isNotEmpty)
+                Text(
+                  item.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSoft),
+                ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: StockBadge(item.stock),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ItemList extends StatelessWidget {
+  const _ItemList({required this.items});
+
+  final List<Item> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.only(bottom: 24),
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, i) {
+        final item = items[i];
+        final meta = [item.brandName, item.categoryName].whereType<String>().where((s) => s.isNotEmpty).join(' · ');
+        return AppCard(
+          padding: const EdgeInsets.all(12),
+          onTap: () => context.push('/items/${item.id}'),
+          child: Row(
+            children: [
+              ItemThumb(url: item.imageUrl, size: 56),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    if (item.subtitle.isNotEmpty)
+                      Text(
+                        item.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSoft,
+                        ),
+                      ),
+                    if (meta.isNotEmpty)
+                      Text(
+                        meta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSoft,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              StockBadge(item.stock),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ItemTable extends StatelessWidget {
+  const _ItemTable({required this.items});
+
+  final List<Item> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            showCheckboxColumn: false,
+            headingTextStyle: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSoft,
+            ),
+            columns: const [
+              DataColumn(label: Text('Serial')),
+              DataColumn(label: Text('Name')),
+              DataColumn(label: Text('Brand')),
+              DataColumn(label: Text('Category')),
+              DataColumn(label: Text('Size')),
+              DataColumn(label: Text('Variation')),
+              DataColumn(label: Text('Stock'), numeric: true),
+            ],
+            rows: [
+              for (final i in items)
+                DataRow(
+                  onSelectChanged: (_) => context.push('/items/${i.id}'),
+                  cells: [
+                    DataCell(Text(i.itemSerial)),
+                    DataCell(Text(i.name)),
+                    DataCell(Text(i.brandName ?? '-')),
+                    DataCell(Text(i.categoryName ?? '-')),
+                    DataCell(Text(i.size.isEmpty ? '-' : i.size)),
+                    DataCell(Text(i.variation.isEmpty ? '-' : i.variation)),
+                    DataCell(
+                      Text(
+                        '${i.stock}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: i.stock == 0 ? AppColors.danger : AppColors.text,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+// features/items/item_form_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+
+import '../../core/app_exception.dart';
+import '../../core/app_svgs.dart';
+import '../../core/app_theme.dart';
+import '../../core/widgets.dart';
+import '../../models/item.dart';
+import '../../models/lookup.dart';
+import '../../providers/providers.dart';
+
+class ItemFormPage extends ConsumerStatefulWidget {
+  const ItemFormPage({super.key, this.itemId});
+
+  /// null = create, otherwise edit this item.
+  final String? itemId;
+
+  @override
+  ConsumerState<ItemFormPage> createState() => _ItemFormPageState();
+}
+
+class _ItemFormPageState extends ConsumerState<ItemFormPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _serial = TextEditingController();
+  final _name = TextEditingController();
+  final _image = TextEditingController();
+  final _desc = TextEditingController();
+  final _size = TextEditingController();
+  final _variation = TextEditingController();
+
+  Lookup? _brand;
+  Lookup? _category;
+  bool _loading = false;
+  bool _busy = false;
+  Object? _loadError;
+
+  bool get _isEdit => widget.itemId != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _loading = _isEdit;
+    if (_isEdit) _load();
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_serial, _name, _image, _desc, _size, _variation]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final item = await ref.read(itemRepositoryProvider).fetchItem(widget.itemId!);
+      if (!mounted) return;
+      setState(() {
+        _serial.text = item.itemSerial;
+        _name.text = item.name;
+        _image.text = item.imageUrl ?? '';
+        _desc.text = item.shortDesc;
+        _size.text = item.size;
+        _variation.text = item.variation;
+        _brand = item.brandId == null ? null : Lookup(id: item.brandId!, name: item.brandName ?? '');
+        _category = item.categoryId == null ? null : Lookup(id: item.categoryId!, name: item.categoryName ?? '');
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadError = e;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<_PickResult?> _openLookup({
+    required String noun,
+    required Future<List<Lookup>> Function() load,
+    required Future<Lookup> Function(String) create,
+    required String? currentId,
+    required bool startInCreateMode,
+  }) async {
+    try {
+      final options = await load();
+      if (!mounted) return null;
+      return showDialog<_PickResult>(
+        context: context,
+        builder: (_) => _LookupDialog(
+          noun: noun,
+          options: options,
+          create: create,
+          currentId: currentId,
+          startInCreateMode: startInCreateMode,
+        ),
+      );
+    } catch (e) {
+      if (mounted) showMessage(context, errorMessage(e), isError: true);
+      return null;
+    }
+  }
+
+  Future<void> _pickBrand({bool create = false}) async {
+    final repo = ref.read(itemRepositoryProvider);
+    final r = await _openLookup(
+      noun: 'brand',
+      load: repo.fetchBrands,
+      create: repo.createBrand,
+      currentId: _brand?.id,
+      startInCreateMode: create,
+    );
+    if (r != null) {
+      setState(() => _brand = r.lookup);
+      ref.invalidate(brandsProvider);
+    }
+  }
+
+  Future<void> _pickCategory({bool create = false}) async {
+    final repo = ref.read(itemRepositoryProvider);
+    final r = await _openLookup(
+      noun: 'category',
+      load: repo.fetchCategories,
+      create: repo.createCategory,
+      currentId: _category?.id,
+      startInCreateMode: create,
+    );
+    if (r != null) {
+      setState(() => _category = r.lookup);
+      ref.invalidate(categoriesProvider);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final user = ref.read(authProvider);
+    if (user == null) return;
+
+    setState(() => _busy = true);
+    try {
+      final input = ItemInput(
+        itemSerial: _serial.text,
+        name: _name.text,
+        brandId: _brand?.id,
+        categoryId: _category?.id,
+        imageUrl: _image.text,
+        shortDesc: _desc.text,
+        size: _size.text,
+        variation: _variation.text,
+      );
+      final repo = ref.read(itemRepositoryProvider);
+      if (_isEdit) {
+        await repo.updateItem(widget.itemId!, user.id, input);
+      } else {
+        await repo.createItem(user.id, input);
+      }
+      refreshAll(ref);
+      if (!mounted) return;
+      showMessage(context, _isEdit ? 'Item updated' : 'Item created');
+      goBackOr(context, '/items');
+    } catch (e) {
+      if (!mounted) return;
+      final msg = (e is PostgrestException && e.code == '23505') ? 'This item serial is already used.' : errorMessage(e);
+      showMessage(context, msg, isError: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String? _required(String? v, String what) => (v == null || v.trim().isEmpty) ? '$what is required' : null;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: () => goBackOr(context, '/items'),
+          icon: AppIcon(AppSvgs.chevronLeftIcon, color: AppColors.text),
+        ),
+        title: Text(_isEdit ? 'Edit item' : 'New item'),
+      ),
+      body: _loadError != null
+          ? ErrorState(error: _loadError!)
+          : _loading
+          ? const LoadingView()
+          : SingleChildScrollView(
+              child: PageContainer(
+                maxWidth: 640,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ItemThumb(url: _image.text, size: 72),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _image,
+                              keyboardType: TextInputType.url,
+                              decoration: const InputDecoration(
+                                labelText: 'Image URL (optional)',
+                              ),
+                              onChanged: (_) => setState(() {}),
+                              validator: (v) {
+                                final t = (v ?? '').trim().toLowerCase();
+                                if (t.isEmpty) return null;
+                                return t.startsWith('http') ? null : 'Must start with http:// or https://';
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: _serial,
+                        decoration: const InputDecoration(labelText: 'Item serial'),
+                        validator: (v) => _required(v, 'Item serial'),
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: _name,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(labelText: 'Name'),
+                        validator: (v) => _required(v, 'Name'),
+                      ),
+                      const SizedBox(height: 14),
+                      _LookupRow(
+                        label: 'Brand',
+                        value: _brand?.name,
+                        onPick: _pickBrand,
+                        onAdd: () => _pickBrand(create: true),
+                      ),
+                      const SizedBox(height: 14),
+                      _LookupRow(
+                        label: 'Category',
+                        value: _category?.name,
+                        onPick: _pickCategory,
+                        onAdd: () => _pickCategory(create: true),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _size,
+                              decoration: const InputDecoration(
+                                labelText: 'Size',
+                                hintText: '1L, 350g, 500ml, 1pcs',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _variation,
+                              decoration: const InputDecoration(
+                                labelText: 'Variation',
+                                hintText: 'strawberry, menthol',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: _desc,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Short description (optional)',
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton(
+                        onPressed: _busy ? null : _save,
+                        child: _busy
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(_isEdit ? 'Save changes' : 'Create item'),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// A brand/category field plus a "+" button to create a new one.
+class _LookupRow extends StatelessWidget {
+  const _LookupRow({
+    required this.label,
+    required this.value,
+    required this.onPick,
+    required this.onAdd,
+  });
+
+  final String label;
+  final String? value;
+  final VoidCallback onPick;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: _PickerField(label: label, value: value, onTap: onPick),
+        ),
+        const SizedBox(width: 8),
+        Tooltip(
+          message: 'New ${label.toLowerCase()}',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: onAdd,
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.primarySoft,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: AppIcon(AppSvgs.addIcon, size: 22, color: AppColors.primary),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Looks like a text field, opens the picker when tapped.
+class _PickerField extends StatelessWidget {
+  const _PickerField({required this.label, required this.value, required this.onTap});
+
+  final String label;
+  final String? value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: InputDecorator(
+        isEmpty: false,
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: Padding(
+            padding: const EdgeInsets.all(14),
+            child: RotatedBox(
+              quarterTurns: 1,
+              child: AppIcon(
+                AppSvgs.chevronRightIcon,
+                size: 16,
+                color: AppColors.textSoft,
+              ),
+            ),
+          ),
+        ),
+        child: Text(
+          value ?? 'None',
+          style: TextStyle(
+            color: value == null ? AppColors.textSoft : AppColors.text,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PickResult {
+  const _PickResult(this.lookup);
+
+  /// null means "None" was chosen.
+  final Lookup? lookup;
+}
+
+/// Pick an existing brand/category, or create a new one.
+/// Creating a name that already exists just selects the existing one.
+class _LookupDialog extends StatefulWidget {
+  const _LookupDialog({
+    required this.noun,
+    required this.options,
+    required this.create,
+    required this.currentId,
+    this.startInCreateMode = false,
+  });
+
+  /// "brand" or "category"
+  final String noun;
+  final List<Lookup> options;
+  final Future<Lookup> Function(String name) create;
+  final String? currentId;
+  final bool startInCreateMode;
+
+  @override
+  State<_LookupDialog> createState() => _LookupDialogState();
+}
+
+class _LookupDialogState extends State<_LookupDialog> {
+  final _search = TextEditingController();
+  final _newName = TextEditingController();
+  late bool _creating = widget.startInCreateMode;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    _newName.dispose();
+    super.dispose();
+  }
+
+  String get _noun => widget.noun;
+  String get _nounTitle => _noun[0].toUpperCase() + _noun.substring(1);
+
+  List<Lookup> get _filtered {
+    final q = _search.text.trim().toLowerCase();
+    return widget.options.where((o) => q.isEmpty || o.name.toLowerCase().contains(q)).toList();
+  }
+
+  void _startCreate() {
+    setState(() {
+      _newName.text = _search.text.trim();
+      _error = null;
+      _creating = true;
+    });
+  }
+
+  Future<void> _create() async {
+    final name = _newName.text.trim();
+    if (name.isEmpty) {
+      setState(() => _error = 'Enter a name');
+      return;
+    }
+
+    // Already exists? Just select it.
+    for (final o in widget.options) {
+      if (o.name.toLowerCase() == name.toLowerCase()) {
+        Navigator.pop(context, _PickResult(o));
+        return;
+      }
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final created = await widget.create(name);
+      if (mounted) Navigator.pop(context, _PickResult(created));
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = errorMessage(e);
+          _busy = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _creating ? _createView() : _listView();
+  }
+
+  Widget _createView() {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      title: Text('New $_noun'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _newName,
+              autofocus: true,
+              enabled: !_busy,
+              textCapitalization: TextCapitalization.words,
+              onSubmitted: (_) => _create(),
+              decoration: InputDecoration(labelText: '$_nounTitle name'),
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: AppColors.danger),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () {
+                  if (widget.startInCreateMode) {
+                    Navigator.pop(context);
+                  } else {
+                    setState(() {
+                      _creating = false;
+                      _error = null;
+                    });
+                  }
+                },
+          child: Text(widget.startInCreateMode ? 'Cancel' : 'Back'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _create,
+          child: _busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text('Add $_noun'),
+        ),
+      ],
+    );
+  }
+
+  Widget _listView() {
+    final list = _filtered;
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      title: Text('Select $_noun'),
+      content: SizedBox(
+        width: 360,
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              controller: _search,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(hintText: 'Search $_noun'),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(
+                children: [
+                  ListTile(
+                    leading: AppIcon(AppSvgs.addIcon, color: AppColors.primary),
+                    title: Text(
+                      'New $_noun',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onTap: _startCreate,
+                  ),
+                  ListTile(
+                    title: const Text('None'),
+                    onTap: () => Navigator.pop(context, const _PickResult(null)),
+                  ),
+                  for (final o in list)
+                    ListTile(
+                      title: Text(o.name),
+                      selected: o.id == widget.currentId,
+                      selectedColor: AppColors.primary,
+                      onTap: () => Navigator.pop(context, _PickResult(o)),
+                    ),
+                  if (list.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'No $_noun found. Tap "New $_noun" to add one.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.textSoft),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+// features/items/item_detail_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+
+import '../../core/app_exception.dart';
+import '../../core/app_svgs.dart';
+import '../../core/app_theme.dart';
+import '../../core/widgets.dart';
+import '../../models/item.dart';
+import '../../providers/providers.dart';
+
+/// Looks up a user's display name by id.
+final _userNameProvider = FutureProvider.autoDispose.family<String, String>((ref, id) async {
+  final row = await ref.watch(supabaseProvider).from('app_users').select('display_name').eq('id', id).maybeSingle();
+  return (row?['display_name'] as String?) ?? 'Unknown';
+});
+
+class ItemDetailPage extends ConsumerWidget {
+  const ItemDetailPage({super.key, required this.itemId});
+
+  final String itemId;
+
+  Future<void> _archive(BuildContext context, WidgetRef ref, Item item) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('Delete item?'),
+        content: Text(
+          '"${item.name}" will be removed from the item list.'
+          '${item.stock > 0 ? ' It still has ${item.stock} in stock.' : ''}'
+          ' Its stock history is kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final user = ref.read(authProvider);
+    if (user == null) return;
+    try {
+      await ref.read(itemRepositoryProvider).archiveItem(item.id, user.id);
+      refreshAll(ref);
+      if (context.mounted) {
+        showMessage(context, 'Item deleted');
+        goBackOr(context, '/items');
+      }
+    } catch (e) {
+      if (context.mounted) showMessage(context, errorMessage(e), isError: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(itemProvider(itemId));
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          onPressed: () => goBackOr(context, '/items'),
+          icon: AppIcon(AppSvgs.chevronLeftIcon, color: AppColors.text),
+        ),
+        title: const Text('Item'),
+        actions: async.hasValue
+            ? [
+                IconButton(
+                  tooltip: 'Edit',
+                  onPressed: () => context.push('/items/$itemId/edit'),
+                  icon: AppIcon(AppSvgs.editIcon, color: AppColors.text),
+                ),
+                IconButton(
+                  tooltip: 'Delete',
+                  onPressed: () => _archive(context, ref, async.requireValue),
+                  icon: AppIcon(AppSvgs.deleteIcon, color: AppColors.danger),
+                ),
+              ]
+            : null,
+      ),
+      body: async.when(
+        loading: () => const LoadingView(),
+        error: (e, _) => ErrorState(
+          error: e,
+          onRetry: () => ref.invalidate(itemProvider(itemId)),
+        ),
+        data: (item) => SingleChildScrollView(
+          child: PageContainer(
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final info = _InfoCard(item: item);
+                final history = _History(itemId: item.id);
+                if (c.maxWidth < 860) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [info, const SizedBox(height: 16), history],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(width: 380, child: info),
+                    const SizedBox(width: 20),
+                    Expanded(child: history),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoCard extends ConsumerWidget {
+  const _InfoCard({required this.item});
+
+  final Item item;
+
+  static final _dateFmt = DateFormat('d MMM yyyy, h:mm a');
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final createdBy = ref.watch(_userNameProvider(item.createdBy)).asData?.value ?? '...';
+    final updatedBy = ref.watch(_userNameProvider(item.updatedBy)).asData?.value ?? '...';
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 200,
+            child: ItemThumb(url: item.imageUrl, expand: true),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            item.name,
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
+          ),
+          if (item.subtitle.isNotEmpty) Text(item.subtitle, style: const TextStyle(color: AppColors.textSoft)),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${item.stock}',
+                style: TextStyle(
+                  fontSize: 36,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                  color: item.stock == 0 ? AppColors.danger : AppColors.text,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Text('in stock', style: TextStyle(color: AppColors.textSoft)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton(
+                onPressed: () => context.push('/orders/supply?item=${item.id}'),
+                child: const Text('Add supply'),
+              ),
+              OutlinedButton(
+                onPressed: () => context.push('/orders/sale?item=${item.id}'),
+                child: const Text('Record sale'),
+              ),
+              OutlinedButton(
+                onPressed: () => context.push('/orders/manual?item=${item.id}'),
+                child: const Text('Adjust stock'),
+              ),
+            ],
+          ),
+          const Divider(height: 32),
+          _InfoRow('Serial', item.itemSerial),
+          _InfoRow('Brand', item.brandName),
+          _InfoRow('Category', item.categoryName),
+          _InfoRow('Size', item.size),
+          _InfoRow('Variation', item.variation),
+          _InfoRow('Description', item.shortDesc),
+          _InfoRow('Created', '${_dateFmt.format(item.createdAt)}\nby $createdBy'),
+          _InfoRow('Updated', '${_dateFmt.format(item.updatedAt)}\nby $updatedBy'),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow(this.label, this.value);
+
+  final String label;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = (value == null || value!.trim().isEmpty) ? '-' : value!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(label, style: const TextStyle(color: AppColors.textSoft)),
+          ),
+          Expanded(child: Text(text)),
+        ],
+      ),
+    );
+  }
+}
+
+class _History extends ConsumerWidget {
+  const _History({required this.itemId});
+
+  final String itemId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(itemHistoryProvider(itemId));
+    final dateFmt = DateFormat('d MMM yyyy');
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Stock history',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          async.when(
+            loading: () => const SizedBox(height: 100, child: LoadingView()),
+            error: (e, _) => ErrorState(
+              error: e,
+              onRetry: () => ref.invalidate(itemHistoryProvider(itemId)),
+            ),
+            data: (rows) {
+              if (rows.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      'No stock changes yet.',
+                      style: TextStyle(color: AppColors.textSoft),
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                children: [
+                  for (var i = 0; i < rows.length; i++) ...[
+                    if (i > 0) const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 56,
+                            child: Text(
+                              signed(rows[i].quantityChange),
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: rows[i].quantityChange > 0 ? AppColors.success : AppColors.danger,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    TypeChip(rows[i].type),
+                                    if (rows[i].referenceNo != null) ...[
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          '#${rows[i].referenceNo}',
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${dateFmt.format(rows[i].entryDate)} · by ${rows[i].createdByName}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSoft,
+                                  ),
+                                ),
+                                if (rows[i].note != null)
+                                  Text(
+                                    rows[i].note!,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontStyle: FontStyle.italic,
+                                      color: AppColors.textSoft,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+// repositories/item_repository.dart
+import 'package:supabase_flutter/supabase_flutter.dart' show SupabaseClient;
+
+import '../core/app_exception.dart';
+import '../models/item.dart';
+import '../models/lookup.dart';
+
+class ItemRepository {
+  ItemRepository(this._db);
+  final SupabaseClient _db;
+
+  static const _select = '*, brands(id,name), categories(id,name), item_stock(quantity)';
+
+  Future<List<Item>> fetchItems() async {
+    final rows = await _db.from('items').select(_select).eq('is_active', true).order('name');
+    return rows.map((r) => Item.fromJson(r)).toList();
+  }
+
+  Future<Item> fetchItem(String id) async {
+    final row = await _db.from('items').select(_select).eq('id', id).maybeSingle();
+    if (row == null) throw const AppException('Item not found.');
+    return Item.fromJson(row);
+  }
+
+  Future<void> createItem(String userId, ItemInput input) async {
+    await _db.from('items').insert({
+      ...input.toJson(),
+      'created_by': userId,
+      'updated_by': userId,
+    });
+  }
+
+  Future<void> updateItem(String id, String userId, ItemInput input) async {
+    await _db
+        .from('items')
+        .update({
+          ...input.toJson(),
+          'updated_by': userId,
+        })
+        .eq('id', id);
+  }
+
+  /// "Delete" hides the item. History stays safe.
+  Future<void> archiveItem(String id, String userId) async {
+    await _db.from('items').update({'is_active': false, 'updated_by': userId}).eq('id', id);
+  }
+
+  Future<List<Lookup>> fetchBrands() => _fetchLookup('brands');
+  Future<List<Lookup>> fetchCategories() => _fetchLookup('categories');
+  Future<Lookup> createBrand(String name) => _createLookup('brands', name);
+  Future<Lookup> createCategory(String name) => _createLookup('categories', name);
+
+  Future<List<Lookup>> _fetchLookup(String table) async {
+    final rows = await _db.from(table).select('id, name').order('name');
+    return rows.map((r) => Lookup.fromJson(r)).toList();
+  }
+
+  Future<Lookup> _createLookup(String table, String name) async {
+    final row = await _db.from(table).insert({'name': name.trim()}).select('id, name').single();
+    return Lookup.fromJson(row);
+  }
+}
+// repositories/auth_repository.dart
+import 'package:supabase_flutter/supabase_flutter.dart' show SupabaseClient;
+
+import '../core/app_exception.dart';
+import '../models/app_user.dart';
+
+class AuthRepository {
+  AuthRepository(this._db);
+  final SupabaseClient _db;
+
+  Future<AppUser> login(String username, String password) async {
+    final res = await _db.rpc(
+      'app_login',
+      params: {
+        'p_username': username,
+        'p_password': password,
+      },
+    );
+    final rows = res as List;
+    if (rows.isEmpty) throw const AppException('Wrong username or password.');
+    return AppUser.fromJson(rows.first as Map<String, dynamic>);
+  }
+}
+// repositories/inventory_repository.dart
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show SupabaseClient;
+
+import '../models/inventory_entry.dart';
+
+class InventoryRepository {
+  InventoryRepository(this._db);
+  final SupabaseClient _db;
+
+  static const _entrySelect =
+      '*, app_users(display_name), '
+      'inventory_entry_lines(id, quantity_change, item_id, items(name,size,variation))';
+
+  static final _dateFormat = DateFormat('yyyy-MM-dd');
+  static String _date(DateTime d) => _dateFormat.format(d);
+
+  static String? _clean(String? s) {
+    final t = s?.trim() ?? '';
+    return t.isEmpty ? null : t;
+  }
+
+  /// quantities: itemId -> quantity.
+  /// Supply and sale: positive numbers. Manual: signed (+ or -).
+  Future<void> createEntry({
+    required String userId,
+    required EntryType type,
+    required DateTime entryDate,
+    required Map<String, int> quantities,
+    String? referenceNo,
+    String? note,
+  }) async {
+    await _db.rpc(
+      'create_inventory_entry',
+      params: {
+        'p_user_id': userId,
+        'p_entry_type': type.name,
+        'p_reference_no': _clean(referenceNo),
+        'p_entry_date': _date(entryDate),
+        'p_note': _clean(note),
+        'p_lines': quantities.entries.map((e) => {'item_id': e.key, 'quantity': e.value}).toList(),
+      },
+    );
+  }
+
+  Future<List<InventoryEntry>> fetchEntries({
+    DateTime? from,
+    DateTime? to,
+    EntryType? type,
+    int limit = 200,
+  }) async {
+    var query = _db.from('inventory_entries').select(_entrySelect);
+    if (from != null) query = query.gte('entry_date', _date(from));
+    if (to != null) query = query.lte('entry_date', _date(to));
+    if (type != null) query = query.eq('entry_type', type.name);
+
+    final rows = await query.order('entry_date', ascending: false).order('created_at', ascending: false).limit(limit);
+    return rows.map((r) => InventoryEntry.fromJson(r)).toList();
+  }
+
+  Future<List<ItemHistoryRow>> fetchItemHistory(String itemId) async {
+    final rows = await _db
+        .from('inventory_entry_lines')
+        .select(
+          'quantity_change, '
+          'inventory_entries(entry_type, reference_no, note, entry_date, created_at, '
+          'app_users(display_name))',
+        )
+        .eq('item_id', itemId)
+        .limit(500);
+
+    final list = rows.map((r) => ItemHistoryRow.fromJson(r)).toList();
+    list.sort((a, b) {
+      final byDate = b.entryDate.compareTo(a.entryDate);
+      return byDate != 0 ? byDate : b.createdAt.compareTo(a.createdAt);
+    });
+    return list;
+  }
+}
+// models/lookup.dart
+/// Used for brands and categories (id + name).
+class Lookup {
+  const Lookup({required this.id, required this.name});
+
+  final String id;
+  final String name;
+
+  factory Lookup.fromJson(Map<String, dynamic> j) => Lookup(id: j['id'] as String, name: j['name'] as String);
+}
+// models/app_user.dart
+class AppUser {
+  const AppUser({
+    required this.id,
+    required this.username,
+    required this.displayName,
+  });
+
+  final String id;
+  final String username;
+  final String displayName;
+
+  factory AppUser.fromJson(Map<String, dynamic> j) => AppUser(
+    id: j['id'] as String,
+    username: j['username'] as String,
+    displayName: j['display_name'] as String,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'username': username,
+    'display_name': displayName,
+  };
+}
+// models/item.dart
+/// "strawberry · 500ml"
+String joinSubtitle(String variation, String size) => [variation, size].where((s) => s.trim().isNotEmpty).join(' · ');
+
+class Item {
+  const Item({
+    required this.id,
+    required this.itemSerial,
+    required this.name,
+    required this.shortDesc,
+    required this.size,
+    required this.variation,
+    required this.isActive,
+    required this.stock,
+    required this.createdBy,
+    required this.updatedBy,
+    required this.createdAt,
+    required this.updatedAt,
+    this.brandId,
+    this.brandName,
+    this.categoryId,
+    this.categoryName,
+    this.imageUrl,
+  });
+
+  final String id;
+  final String itemSerial;
+  final String name;
+  final String shortDesc;
+  final String size;
+  final String variation;
+  final bool isActive;
+  final int stock;
+  final String? brandId;
+  final String? brandName;
+  final String? categoryId;
+  final String? categoryName;
+  final String? imageUrl;
+  final String createdBy;
+  final String updatedBy;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  String get subtitle => joinSubtitle(variation, size);
+
+  factory Item.fromJson(Map<String, dynamic> j) {
+    final brand = j['brands'] as Map<String, dynamic>?;
+    final category = j['categories'] as Map<String, dynamic>?;
+
+    // item_stock may come back as an object or a list with one object
+    final stockRaw = j['item_stock'];
+    final Map<String, dynamic>? stockMap = stockRaw is List
+        ? (stockRaw.isEmpty ? null : stockRaw.first as Map<String, dynamic>)
+        : stockRaw as Map<String, dynamic>?;
+
+    return Item(
+      id: j['id'] as String,
+      itemSerial: j['item_serial'] as String,
+      name: j['name'] as String,
+      shortDesc: (j['short_desc'] as String?) ?? '',
+      size: (j['size'] as String?) ?? '',
+      variation: (j['variation'] as String?) ?? '',
+      isActive: (j['is_active'] as bool?) ?? true,
+      stock: (stockMap?['quantity'] as int?) ?? 0,
+      brandId: j['brand_id'] as String?,
+      brandName: brand?['name'] as String?,
+      categoryId: j['category_id'] as String?,
+      categoryName: category?['name'] as String?,
+      imageUrl: j['image_url'] as String?,
+      createdBy: j['created_by'] as String,
+      updatedBy: j['updated_by'] as String,
+      createdAt: DateTime.parse(j['created_at'] as String).toLocal(),
+      updatedAt: DateTime.parse(j['updated_at'] as String).toLocal(),
+    );
+  }
+}
+
+/// Values from the create/edit form.
+class ItemInput {
+  const ItemInput({
+    required this.itemSerial,
+    required this.name,
+    this.brandId,
+    this.categoryId,
+    this.imageUrl,
+    this.shortDesc = '',
+    this.size = '',
+    this.variation = '',
+  });
+
+  final String itemSerial;
+  final String name;
+  final String? brandId;
+  final String? categoryId;
+  final String? imageUrl;
+  final String shortDesc;
+  final String size;
+  final String variation;
+
+  Map<String, dynamic> toJson() => {
+    'item_serial': itemSerial.trim(),
+    'name': name.trim(),
+    'brand_id': brandId,
+    'category_id': categoryId,
+    'image_url': (imageUrl == null || imageUrl!.trim().isEmpty) ? null : imageUrl!.trim(),
+    'short_desc': shortDesc.trim(),
+    'size': size.trim(),
+    'variation': variation.trim(),
+  };
+}
+// models/inventory_entry.dart
+import 'item.dart' show joinSubtitle;
+
+enum EntryType {
+  supply,
+  sale,
+  manual
+  ;
+
+  String get label => switch (this) {
+    EntryType.supply => 'Supply',
+    EntryType.sale => 'Sale',
+    EntryType.manual => 'Manual',
+  };
+}
+
+class EntryLine {
+  const EntryLine({
+    required this.itemId,
+    required this.itemName,
+    required this.itemSubtitle,
+    required this.quantityChange,
+  });
+
+  final String itemId;
+  final String itemName;
+  final String itemSubtitle;
+  final int quantityChange;
+
+  factory EntryLine.fromJson(Map<String, dynamic> j) {
+    final item = (j['items'] as Map<String, dynamic>?) ?? const {};
+    return EntryLine(
+      itemId: j['item_id'] as String,
+      itemName: (item['name'] as String?) ?? 'Unknown item',
+      itemSubtitle: joinSubtitle(
+        (item['variation'] as String?) ?? '',
+        (item['size'] as String?) ?? '',
+      ),
+      quantityChange: j['quantity_change'] as int,
+    );
+  }
+}
+
+class InventoryEntry {
+  const InventoryEntry({
+    required this.id,
+    required this.type,
+    required this.entryDate,
+    required this.createdByName,
+    required this.createdAt,
+    required this.lines,
+    this.referenceNo,
+    this.note,
+  });
+
+  final String id;
+  final EntryType type;
+  final String? referenceNo;
+  final String? note;
+  final DateTime entryDate;
+  final String createdByName;
+  final DateTime createdAt;
+  final List<EntryLine> lines;
+
+  int get totalUnits => lines.fold(0, (sum, l) => sum + l.quantityChange.abs());
+
+  factory InventoryEntry.fromJson(Map<String, dynamic> j) {
+    final user = j['app_users'] as Map<String, dynamic>?;
+    final rawLines = (j['inventory_entry_lines'] as List?) ?? const [];
+    return InventoryEntry(
+      id: j['id'] as String,
+      type: EntryType.values.byName(j['entry_type'] as String),
+      referenceNo: j['reference_no'] as String?,
+      note: j['note'] as String?,
+      entryDate: DateTime.parse(j['entry_date'] as String),
+      createdByName: (user?['display_name'] as String?) ?? 'Unknown',
+      createdAt: DateTime.parse(j['created_at'] as String).toLocal(),
+      lines: rawLines.map((l) => EntryLine.fromJson(l as Map<String, dynamic>)).toList(),
+    );
+  }
+}
+
+/// One stock change for one item, used in Item Detail history.
+class ItemHistoryRow {
+  const ItemHistoryRow({
+    required this.type,
+    required this.quantityChange,
+    required this.entryDate,
+    required this.createdAt,
+    required this.createdByName,
+    this.referenceNo,
+    this.note,
+  });
+
+  final EntryType type;
+  final int quantityChange;
+  final DateTime entryDate;
+  final DateTime createdAt;
+  final String createdByName;
+  final String? referenceNo;
+  final String? note;
+
+  factory ItemHistoryRow.fromJson(Map<String, dynamic> j) {
+    final e = j['inventory_entries'] as Map<String, dynamic>;
+    final user = e['app_users'] as Map<String, dynamic>?;
+    return ItemHistoryRow(
+      type: EntryType.values.byName(e['entry_type'] as String),
+      quantityChange: j['quantity_change'] as int,
+      entryDate: DateTime.parse(e['entry_date'] as String),
+      createdAt: DateTime.parse(e['created_at'] as String).toLocal(),
+      createdByName: (user?['display_name'] as String?) ?? 'Unknown',
+      referenceNo: e['reference_no'] as String?,
+      note: e['note'] as String?,
+    );
+  }
+}
+// main.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
+
+import 'app.dart';
+import 'core/app_env.dart';
+import 'providers/providers.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  AppEnv.assertConfigured();
+
+  await Supabase.initialize(url: AppEnv.supabaseUrl, anonKey: AppEnv.supabaseAnonKey);
+  final prefs = await SharedPreferences.getInstance();
+
+  runApp(
+    ProviderScope(
+      overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+      child: const App(),
+    ),
+  );
+}
+// app.dart
+import 'package:bar_app/core/app_env.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'core/app_router.dart';
+import 'core/app_theme.dart';
+
+class App extends ConsumerWidget {
+  const App({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+    return MaterialApp.router(
+      title: 'Bar Inventory (${AppEnv.envName.toUpperCase()})',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light,
+      themeMode: ThemeMode.light,
+      routerConfig: router,
+    );
+  }
+}
