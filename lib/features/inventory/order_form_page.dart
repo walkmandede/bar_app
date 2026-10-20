@@ -1,4 +1,3 @@
-// features/inventory/order_form_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +19,8 @@ class _Line {
   final TextEditingController controller;
 
   int get qty => int.tryParse(controller.text.trim()) ?? 0;
+
+  bool get hasValue => int.tryParse(controller.text.trim()) != null;
 }
 
 class OrderFormPage extends ConsumerStatefulWidget {
@@ -43,6 +44,9 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   DateTime _date = _today();
   bool _busy = false;
 
+  /// Adjust stock only: true = type the final stock, false = type the change (+/-).
+  bool _setFinal = true;
+
   static DateTime _today() {
     final n = DateTime.now();
     return DateTime(n.year, n.month, n.day);
@@ -60,7 +64,7 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   String get _hint => switch (widget.type) {
     EntryType.supply => 'Items you received. Stock goes up.',
     EntryType.sale => 'Items sold. Stock goes down.',
-    EntryType.manual => 'Enter how much to add (+) or remove (-) for each item.',
+    EntryType.manual => _setFinal ? 'Enter the final stock count for each item.' : 'Enter how much to add (+) or remove (-) for each item.',
   };
 
   String get _saveLabel => switch (widget.type) {
@@ -119,10 +123,11 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   }
 
   /// Stock change this line will cause.
+  /// In "set final stock" mode the change is (final - current stock).
   int _delta(_Line l) => switch (widget.type) {
     EntryType.supply => l.qty,
     EntryType.sale => -l.qty,
-    EntryType.manual => l.qty,
+    EntryType.manual => _setFinal ? (l.hasValue ? l.qty - l.item.stock : 0) : l.qty,
   };
 
   /// Quick check on screen. The database does the final check.
@@ -135,9 +140,15 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
         if (q <= 0) return 'Enter a quantity above 0';
         if (q > l.item.stock) return 'Only ${l.item.stock} in stock';
       case EntryType.manual:
-        if (q == 0) return 'Enter an amount (+ or -)';
-        if (l.item.stock + q < 0) {
-          return 'Stock cannot go below 0 (now ${l.item.stock})';
+        if (_setFinal) {
+          if (!l.hasValue) return 'Enter the final stock';
+          if (q < 0) return 'Stock cannot be below 0';
+          if (q == l.item.stock) return 'Same as current stock (${l.item.stock})';
+        } else {
+          if (q == 0) return 'Enter an amount (+ or -)';
+          if (l.item.stock + q < 0) {
+            return 'Stock cannot go below 0 (now ${l.item.stock})';
+          }
         }
     }
     return null;
@@ -146,9 +157,23 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   bool get _canSave => _lines.isNotEmpty && _lines.values.every((l) => _lineError(l) == null);
 
   void _step(_Line l, int by) {
-    var next = l.qty + by;
+    // In "set final stock" mode an empty box starts from the current stock.
+    final base = (_isManual && _setFinal && !l.hasValue) ? l.item.stock : l.qty;
+    var next = base + by;
     if (!_isManual && next < 1) next = 1;
+    if (_isManual && _setFinal && next < 0) next = 0;
     setState(() => l.controller.text = '$next');
+  }
+
+  void _setMode(bool setFinal) {
+    if (_setFinal == setFinal) return;
+    setState(() {
+      _setFinal = setFinal;
+      // The same number means something different in each mode, so clear them.
+      for (final l in _lines.values) {
+        l.controller.clear();
+      }
+    });
   }
 
   Future<void> _pickDate() async {
@@ -187,7 +212,8 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
             userId: user.id,
             type: widget.type,
             entryDate: _date,
-            quantities: {for (final l in _lines.values) l.item.id: l.qty},
+            // Manual: always send the signed change. Supply/sale: the typed number.
+            quantities: {for (final l in _lines.values) l.item.id: _isManual ? _delta(l) : l.qty},
             referenceNo: _isManual ? null : _reference.text,
             note: _note.text,
           );
@@ -224,6 +250,18 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
               children: [
                 Text(_hint, style: const TextStyle(color: AppColors.textSoft)),
                 const SizedBox(height: 16),
+                if (_isManual) ...[
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('Set final stock')),
+                      ButtonSegment(value: false, label: Text('Change (+/-)')),
+                    ],
+                    selected: {_setFinal},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (v) => _setMode(v.first),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 if (!_isManual) ...[
                   TextFormField(
                     controller: _reference,
@@ -332,7 +370,8 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   Widget _lineCard(_Line l) {
     final err = _lineError(l);
     final showErr = err != null && l.controller.text.trim().isNotEmpty;
-    final stockText = l.qty != 0 ? 'Stock: ${l.item.stock}  →  ${l.item.stock + _delta(l)}' : 'Stock: ${l.item.stock}';
+    final hasChange = _isManual && _setFinal ? l.hasValue : l.qty != 0;
+    final stockText = hasChange ? 'Stock: ${l.item.stock}  →  ${l.item.stock + _delta(l)}' : 'Stock: ${l.item.stock}';
 
     return AppCard(
       padding: const EdgeInsets.all(12),
@@ -396,18 +435,18 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
                 child: TextField(
                   controller: l.controller,
                   textAlign: TextAlign.center,
-                  keyboardType: TextInputType.numberWithOptions(signed: _isManual),
+                  keyboardType: TextInputType.numberWithOptions(signed: _isManual && !_setFinal),
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(
-                      RegExp(_isManual ? r'[0-9-]' : r'[0-9]'),
+                      RegExp(_isManual && !_setFinal ? r'[0-9-]' : r'[0-9]'),
                     ),
                     LengthLimitingTextInputFormatter(6),
                   ],
                   onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
-                    hintText: '0',
-                    contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                    hintText: _isManual && _setFinal ? '${l.item.stock}' : '0',
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   ),
                 ),
               ),

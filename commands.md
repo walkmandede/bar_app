@@ -21,7 +21,7 @@ git checkout github-page
 
 git add .
 git commit -m "Deploy to GitHub Pages"
-git push origin github-page --force
+git push origin gh-page --force
 git checkout main
 
 ----

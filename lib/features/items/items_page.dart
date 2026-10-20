@@ -459,7 +459,8 @@ class _ItemTable extends StatelessWidget {
               color: AppColors.textSoft,
             ),
             columns: const [
-              DataColumn(label: Text('Serial')),
+              DataColumn(label: Text('No'), numeric: true),
+              DataColumn(label: Text('Code')),
               DataColumn(label: Text('Name')),
               DataColumn(label: Text('Brand')),
               DataColumn(label: Text('Category')),
@@ -468,22 +469,23 @@ class _ItemTable extends StatelessWidget {
               DataColumn(label: Text('Stock'), numeric: true),
             ],
             rows: [
-              for (final i in items)
+              for (var n = 0; n < items.length; n++)
                 DataRow(
-                  onSelectChanged: (_) => context.push('/items/${i.id}'),
+                  onSelectChanged: (_) => context.push('/items/${items[n].id}'),
                   cells: [
-                    DataCell(Text(i.itemSerial ?? '-')),
-                    DataCell(Text(i.name)),
-                    DataCell(Text(i.brandName ?? '-')),
-                    DataCell(Text(i.categoryName ?? '-')),
-                    DataCell(Text(i.size.isEmpty ? '-' : i.size)),
-                    DataCell(Text(i.variation.isEmpty ? '-' : i.variation)),
+                    DataCell(Text('${n + 1}')),
+                    DataCell(Text(items[n].itemSerial ?? '-')),
+                    DataCell(Text(items[n].name)),
+                    DataCell(Text(items[n].brandName ?? '-')),
+                    DataCell(Text(items[n].categoryName ?? '-')),
+                    DataCell(Text(items[n].size.isEmpty ? '-' : items[n].size)),
+                    DataCell(Text(items[n].variation.isEmpty ? '-' : items[n].variation)),
                     DataCell(
                       Text(
-                        '${i.stock}',
+                        '${items[n].stock}',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          color: i.stock == 0 ? AppColors.danger : AppColors.text,
+                          color: items[n].stock == 0 ? AppColors.danger : AppColors.text,
                         ),
                       ),
                     ),

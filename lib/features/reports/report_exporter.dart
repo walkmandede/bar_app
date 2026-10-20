@@ -12,6 +12,8 @@ import '../../models/stock_report.dart';
 /// Google Sheets can open .xlsx files (Drive > Upload > Open with Google Sheets).
 class ReportExporter {
   static const _headers = [
+    'No',
+    'Code',
     'Item Name',
     'Opening Stock',
     'Supply Qty',
@@ -81,35 +83,42 @@ class ReportExporter {
       s.updateCell(
         at(c, headerRow),
         xl.TextCellValue(_headers[c]),
-        cellStyle: (c == 0 || c == 5) ? headLeft : headRight,
+        cellStyle: (c == 1 || c == 2 || c == 7) ? headLeft : headRight,
       );
     }
 
     // Item rows
     var r = headerRow + 1;
+    var no = 1;
     for (final row in sheet.rows) {
-      s.updateCell(at(0, r), xl.TextCellValue(row.displayName));
-      s.updateCell(at(1, r), xl.IntCellValue(row.opening), cellStyle: number);
-      s.updateCell(at(2, r), xl.IntCellValue(row.supply), cellStyle: number);
-      s.updateCell(at(3, r), xl.IntCellValue(row.sale), cellStyle: number);
-      s.updateCell(at(4, r), xl.IntCellValue(row.closing), cellStyle: number);
+      s.updateCell(at(0, r), xl.IntCellValue(no++), cellStyle: number);
+      s.updateCell(at(1, r), xl.TextCellValue(row.code));
+      s.updateCell(at(2, r), xl.TextCellValue(row.displayName));
+      s.updateCell(at(3, r), xl.IntCellValue(row.opening), cellStyle: number);
+      s.updateCell(at(4, r), xl.IntCellValue(row.supply), cellStyle: number);
+      s.updateCell(at(5, r), xl.IntCellValue(row.sale), cellStyle: number);
+      s.updateCell(at(6, r), xl.IntCellValue(row.closing), cellStyle: number);
       if (row.remark.isNotEmpty) {
-        s.updateCell(at(5, r), xl.TextCellValue(row.remark));
+        s.updateCell(at(7, r), xl.TextCellValue(row.remark));
       }
       r++;
     }
 
     // Total row
-    s.updateCell(at(0, r), xl.TextCellValue('Total'), cellStyle: totalLeft);
-    s.updateCell(at(1, r), xl.IntCellValue(sheet.totalOpening), cellStyle: totalRight);
-    s.updateCell(at(2, r), xl.IntCellValue(sheet.totalSupply), cellStyle: totalRight);
-    s.updateCell(at(3, r), xl.IntCellValue(sheet.totalSale), cellStyle: totalRight);
-    s.updateCell(at(4, r), xl.IntCellValue(sheet.totalClosing), cellStyle: totalRight);
+    s.updateCell(at(0, r), xl.TextCellValue(''), cellStyle: totalLeft);
+    s.updateCell(at(1, r), xl.TextCellValue(''), cellStyle: totalLeft);
+    s.updateCell(at(2, r), xl.TextCellValue('Total'), cellStyle: totalLeft);
+    s.updateCell(at(3, r), xl.IntCellValue(sheet.totalOpening), cellStyle: totalRight);
+    s.updateCell(at(4, r), xl.IntCellValue(sheet.totalSupply), cellStyle: totalRight);
+    s.updateCell(at(5, r), xl.IntCellValue(sheet.totalSale), cellStyle: totalRight);
+    s.updateCell(at(6, r), xl.IntCellValue(sheet.totalClosing), cellStyle: totalRight);
 
-    s.setColumnWidth(0, 44);
-    for (var c = 1; c <= 4; c++) {
+    s.setColumnWidth(0, 6);
+    s.setColumnWidth(1, 14);
+    s.setColumnWidth(2, 44);
+    for (var c = 3; c <= 6; c++) {
       s.setColumnWidth(c, 16);
     }
-    s.setColumnWidth(5, 44);
+    s.setColumnWidth(7, 44);
   }
 }

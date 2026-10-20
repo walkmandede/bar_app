@@ -14,9 +14,11 @@ class ReportRow {
     required this.sale,
     required this.closing,
     this.remark = '',
+    this.code = '',
   });
 
   final String itemId;
+  final String code; // item serial number, e.g. SKU-1001
   final String name;
   final String subtitle;
   final int opening;
@@ -29,6 +31,18 @@ class ReportRow {
 
   /// True when something happened to this item on that day.
   bool get hasMovement => supply != 0 || sale != 0 || remark.isNotEmpty;
+
+  ReportRow withCode(String code) => ReportRow(
+    itemId: itemId,
+    name: name,
+    subtitle: subtitle,
+    opening: opening,
+    supply: supply,
+    sale: sale,
+    closing: closing,
+    remark: remark,
+    code: code,
+  );
 
   factory ReportRow.fromJson(Map<String, dynamic> j) => ReportRow(
     itemId: j['item_id'] as String,
@@ -67,11 +81,13 @@ List<ReportSheet> buildReportSheets({
   required List<Item> activeItems,
 }) {
   final keyFormat = DateFormat('yyyy-MM-dd');
+  final codeById = {for (final i in activeItems) i.id: i.itemSerial ?? ''};
 
   final byDate = <String, Map<String, ReportRow>>{};
   for (final j in serverRows) {
     final row = ReportRow.fromJson(j);
-    (byDate[j['date'] as String] ??= {})[row.itemId] = row;
+    final withCode = row.withCode(codeById[row.itemId] ?? '');
+    (byDate[j['date'] as String] ??= {})[row.itemId] = withCode;
   }
 
   final sheets = <ReportSheet>[];
@@ -96,6 +112,7 @@ List<ReportSheet> buildReportSheets({
           supply: 0,
           sale: 0,
           closing: 0,
+          code: item.itemSerial ?? '',
         ),
       );
     }
