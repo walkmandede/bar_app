@@ -92,8 +92,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         context,
         sheets.length == 1 ? 'Excel file downloaded' : 'Excel file with ${sheets.length} sheets downloaded',
       );
-    } catch (e) {
-      showMessage(context, errorMessage(e), isError: true);
+    } catch (e, st) {
+      debugPrint('Export failed: $e\n$st'); // visible in the browser console
+      showMessage(context, 'Export failed: $e', isError: true);
     }
   }
 

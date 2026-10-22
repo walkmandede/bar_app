@@ -36,7 +36,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       appBar: AppBar(
         title: const Row(
           children: [
-            Text('Bar Inventory', style: TextStyle(fontWeight: FontWeight.w700)),
+            Text('Bar Inventory (1.0.3)', style: TextStyle(fontWeight: FontWeight.w700)),
             SizedBox(width: 8),
             EnvBadge(),
           ],

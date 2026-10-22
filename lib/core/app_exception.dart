@@ -1,4 +1,5 @@
 // core/app_exception.dart
+import 'package:flutter/rendering.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 class AppException implements Exception {
@@ -18,5 +19,6 @@ String errorMessage(Object error) {
     }
     return error.message;
   }
+  debugPrint(error.toString());
   return 'Something went wrong. Please try again.';
 }
