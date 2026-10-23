@@ -1,5 +1,6 @@
 // core/app_router.dart
 import 'package:bar_app/core/widgets.dart';
+import 'package:bar_app/features/inventory/adjust_stock_page.dart';
 import 'package:bar_app/features/reports/reports_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -165,6 +166,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _buildTransitionPage(
           state: state,
           child: const SubPage(child: ReportsPage()),
+          transition: TransitionType.slide,
+        ),
+      ),
+
+      GoRoute(
+        path: '/orders/manual',
+        pageBuilder: (context, state) => _buildTransitionPage(
+          state: state,
+          child: AdjustStockPage(
+            presetItemId: state.uri.queryParameters['item'],
+          ),
           transition: TransitionType.slide,
         ),
       ),

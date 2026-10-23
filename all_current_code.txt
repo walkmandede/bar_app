@@ -718,6 +718,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 // core/app_exception.dart
+import 'package:flutter/rendering.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 class AppException implements Exception {
@@ -737,6 +738,7 @@ String errorMessage(Object error) {
     }
     return error.message;
   }
+  debugPrint(error.toString());
   return 'Something went wrong. Please try again.';
 }
 // core/responsive.dart
@@ -1136,7 +1138,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       appBar: AppBar(
         title: const Row(
           children: [
-            Text('Bar Inventory', style: TextStyle(fontWeight: FontWeight.w700)),
+            Text('Bar Inventory (1.0.4)', style: TextStyle(fontWeight: FontWeight.w700)),
             SizedBox(width: 8),
             EnvBadge(),
           ],
@@ -1836,7 +1838,6 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
     );
   }
 }
-// features/inventory/order_form_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1858,6 +1859,8 @@ class _Line {
   final TextEditingController controller;
 
   int get qty => int.tryParse(controller.text.trim()) ?? 0;
+
+  bool get hasValue => int.tryParse(controller.text.trim()) != null;
 }
 
 class OrderFormPage extends ConsumerStatefulWidget {
@@ -1881,6 +1884,9 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   DateTime _date = _today();
   bool _busy = false;
 
+  /// Adjust stock only: true = type the final stock, false = type the change (+/-).
+  bool _setFinal = true;
+
   static DateTime _today() {
     final n = DateTime.now();
     return DateTime(n.year, n.month, n.day);
@@ -1898,7 +1904,7 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   String get _hint => switch (widget.type) {
     EntryType.supply => 'Items you received. Stock goes up.',
     EntryType.sale => 'Items sold. Stock goes down.',
-    EntryType.manual => 'Enter how much to add (+) or remove (-) for each item.',
+    EntryType.manual => _setFinal ? 'Enter the final stock count for each item.' : 'Enter how much to add (+) or remove (-) for each item.',
   };
 
   String get _saveLabel => switch (widget.type) {
@@ -1957,10 +1963,11 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   }
 
   /// Stock change this line will cause.
+  /// In "set final stock" mode the change is (final - current stock).
   int _delta(_Line l) => switch (widget.type) {
     EntryType.supply => l.qty,
     EntryType.sale => -l.qty,
-    EntryType.manual => l.qty,
+    EntryType.manual => _setFinal ? (l.hasValue ? l.qty - l.item.stock : 0) : l.qty,
   };
 
   /// Quick check on screen. The database does the final check.
@@ -1973,9 +1980,15 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
         if (q <= 0) return 'Enter a quantity above 0';
         if (q > l.item.stock) return 'Only ${l.item.stock} in stock';
       case EntryType.manual:
-        if (q == 0) return 'Enter an amount (+ or -)';
-        if (l.item.stock + q < 0) {
-          return 'Stock cannot go below 0 (now ${l.item.stock})';
+        if (_setFinal) {
+          if (!l.hasValue) return 'Enter the final stock';
+          if (q < 0) return 'Stock cannot be below 0';
+          if (q == l.item.stock) return 'Same as current stock (${l.item.stock})';
+        } else {
+          if (q == 0) return 'Enter an amount (+ or -)';
+          if (l.item.stock + q < 0) {
+            return 'Stock cannot go below 0 (now ${l.item.stock})';
+          }
         }
     }
     return null;
@@ -1984,9 +1997,23 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   bool get _canSave => _lines.isNotEmpty && _lines.values.every((l) => _lineError(l) == null);
 
   void _step(_Line l, int by) {
-    var next = l.qty + by;
+    // In "set final stock" mode an empty box starts from the current stock.
+    final base = (_isManual && _setFinal && !l.hasValue) ? l.item.stock : l.qty;
+    var next = base + by;
     if (!_isManual && next < 1) next = 1;
+    if (_isManual && _setFinal && next < 0) next = 0;
     setState(() => l.controller.text = '$next');
+  }
+
+  void _setMode(bool setFinal) {
+    if (_setFinal == setFinal) return;
+    setState(() {
+      _setFinal = setFinal;
+      // The same number means something different in each mode, so clear them.
+      for (final l in _lines.values) {
+        l.controller.clear();
+      }
+    });
   }
 
   Future<void> _pickDate() async {
@@ -2025,7 +2052,8 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
             userId: user.id,
             type: widget.type,
             entryDate: _date,
-            quantities: {for (final l in _lines.values) l.item.id: l.qty},
+            // Manual: always send the signed change. Supply/sale: the typed number.
+            quantities: {for (final l in _lines.values) l.item.id: _isManual ? _delta(l) : l.qty},
             referenceNo: _isManual ? null : _reference.text,
             note: _note.text,
           );
@@ -2062,6 +2090,18 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
               children: [
                 Text(_hint, style: const TextStyle(color: AppColors.textSoft)),
                 const SizedBox(height: 16),
+                if (_isManual) ...[
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('Set final stock')),
+                      ButtonSegment(value: false, label: Text('Change (+/-)')),
+                    ],
+                    selected: {_setFinal},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (v) => _setMode(v.first),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 if (!_isManual) ...[
                   TextFormField(
                     controller: _reference,
@@ -2170,7 +2210,8 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
   Widget _lineCard(_Line l) {
     final err = _lineError(l);
     final showErr = err != null && l.controller.text.trim().isNotEmpty;
-    final stockText = l.qty != 0 ? 'Stock: ${l.item.stock}  →  ${l.item.stock + _delta(l)}' : 'Stock: ${l.item.stock}';
+    final hasChange = _isManual && _setFinal ? l.hasValue : l.qty != 0;
+    final stockText = hasChange ? 'Stock: ${l.item.stock}  →  ${l.item.stock + _delta(l)}' : 'Stock: ${l.item.stock}';
 
     return AppCard(
       padding: const EdgeInsets.all(12),
@@ -2234,18 +2275,18 @@ class _OrderFormPageState extends ConsumerState<OrderFormPage> {
                 child: TextField(
                   controller: l.controller,
                   textAlign: TextAlign.center,
-                  keyboardType: TextInputType.numberWithOptions(signed: _isManual),
+                  keyboardType: TextInputType.numberWithOptions(signed: _isManual && !_setFinal),
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(
-                      RegExp(_isManual ? r'[0-9-]' : r'[0-9]'),
+                      RegExp(_isManual && !_setFinal ? r'[0-9-]' : r'[0-9]'),
                     ),
                     LengthLimitingTextInputFormatter(6),
                   ],
                   onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
-                    hintText: '0',
-                    contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                    hintText: _isManual && _setFinal ? '${l.item.stock}' : '0',
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   ),
                 ),
               ),
@@ -2873,7 +2914,8 @@ class _ItemTable extends StatelessWidget {
               color: AppColors.textSoft,
             ),
             columns: const [
-              DataColumn(label: Text('Serial')),
+              DataColumn(label: Text('No'), numeric: true),
+              DataColumn(label: Text('Code')),
               DataColumn(label: Text('Name')),
               DataColumn(label: Text('Brand')),
               DataColumn(label: Text('Category')),
@@ -2882,22 +2924,23 @@ class _ItemTable extends StatelessWidget {
               DataColumn(label: Text('Stock'), numeric: true),
             ],
             rows: [
-              for (final i in items)
+              for (var n = 0; n < items.length; n++)
                 DataRow(
-                  onSelectChanged: (_) => context.push('/items/${i.id}'),
+                  onSelectChanged: (_) => context.push('/items/${items[n].id}'),
                   cells: [
-                    DataCell(Text(i.itemSerial ?? '-')),
-                    DataCell(Text(i.name)),
-                    DataCell(Text(i.brandName ?? '-')),
-                    DataCell(Text(i.categoryName ?? '-')),
-                    DataCell(Text(i.size.isEmpty ? '-' : i.size)),
-                    DataCell(Text(i.variation.isEmpty ? '-' : i.variation)),
+                    DataCell(Text('${n + 1}')),
+                    DataCell(Text(items[n].itemSerial ?? '-')),
+                    DataCell(Text(items[n].name)),
+                    DataCell(Text(items[n].brandName ?? '-')),
+                    DataCell(Text(items[n].categoryName ?? '-')),
+                    DataCell(Text(items[n].size.isEmpty ? '-' : items[n].size)),
+                    DataCell(Text(items[n].variation.isEmpty ? '-' : items[n].variation)),
                     DataCell(
                       Text(
-                        '${i.stock}',
+                        '${items[n].stock}',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          color: i.stock == 0 ? AppColors.danger : AppColors.text,
+                          color: items[n].stock == 0 ? AppColors.danger : AppColors.text,
                         ),
                       ),
                     ),
@@ -3956,8 +3999,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         context,
         sheets.length == 1 ? 'Excel file downloaded' : 'Excel file with ${sheets.length} sheets downloaded',
       );
-    } catch (e) {
-      showMessage(context, errorMessage(e), isError: true);
+    } catch (e, st) {
+      debugPrint('Export failed: $e\n$st'); // visible in the browser console
+      showMessage(context, 'Export failed: $e', isError: true);
     }
   }
 
@@ -4493,7 +4537,7 @@ class _SheetTabsState extends State<_SheetTabs> {
 // features/reports/report_exporter.dart
 import 'dart:typed_data';
 
-import 'package:excel/excel.dart' as xl;
+import 'package:excel_plus/excel_plus.dart' as xl;
 import 'package:intl/intl.dart';
 
 import '../../core/app_exception.dart';
@@ -4504,6 +4548,8 @@ import '../../models/stock_report.dart';
 /// Google Sheets can open .xlsx files (Drive > Upload > Open with Google Sheets).
 class ReportExporter {
   static const _headers = [
+    'No',
+    'Code',
     'Item Name',
     'Opening Stock',
     'Supply Qty',
@@ -4573,36 +4619,43 @@ class ReportExporter {
       s.updateCell(
         at(c, headerRow),
         xl.TextCellValue(_headers[c]),
-        cellStyle: (c == 0 || c == 5) ? headLeft : headRight,
+        cellStyle: (c == 1 || c == 2 || c == 7) ? headLeft : headRight,
       );
     }
 
     // Item rows
     var r = headerRow + 1;
+    var no = 1;
     for (final row in sheet.rows) {
-      s.updateCell(at(0, r), xl.TextCellValue(row.displayName));
-      s.updateCell(at(1, r), xl.IntCellValue(row.opening), cellStyle: number);
-      s.updateCell(at(2, r), xl.IntCellValue(row.supply), cellStyle: number);
-      s.updateCell(at(3, r), xl.IntCellValue(row.sale), cellStyle: number);
-      s.updateCell(at(4, r), xl.IntCellValue(row.closing), cellStyle: number);
+      s.updateCell(at(0, r), xl.IntCellValue(no++), cellStyle: number);
+      s.updateCell(at(1, r), xl.TextCellValue(row.code));
+      s.updateCell(at(2, r), xl.TextCellValue(row.displayName));
+      s.updateCell(at(3, r), xl.IntCellValue(row.opening), cellStyle: number);
+      s.updateCell(at(4, r), xl.IntCellValue(row.supply), cellStyle: number);
+      s.updateCell(at(5, r), xl.IntCellValue(row.sale), cellStyle: number);
+      s.updateCell(at(6, r), xl.IntCellValue(row.closing), cellStyle: number);
       if (row.remark.isNotEmpty) {
-        s.updateCell(at(5, r), xl.TextCellValue(row.remark));
+        s.updateCell(at(7, r), xl.TextCellValue(row.remark));
       }
       r++;
     }
 
     // Total row
-    s.updateCell(at(0, r), xl.TextCellValue('Total'), cellStyle: totalLeft);
-    s.updateCell(at(1, r), xl.IntCellValue(sheet.totalOpening), cellStyle: totalRight);
-    s.updateCell(at(2, r), xl.IntCellValue(sheet.totalSupply), cellStyle: totalRight);
-    s.updateCell(at(3, r), xl.IntCellValue(sheet.totalSale), cellStyle: totalRight);
-    s.updateCell(at(4, r), xl.IntCellValue(sheet.totalClosing), cellStyle: totalRight);
+    s.updateCell(at(0, r), xl.TextCellValue(''), cellStyle: totalLeft);
+    s.updateCell(at(1, r), xl.TextCellValue(''), cellStyle: totalLeft);
+    s.updateCell(at(2, r), xl.TextCellValue('Total'), cellStyle: totalLeft);
+    s.updateCell(at(3, r), xl.IntCellValue(sheet.totalOpening), cellStyle: totalRight);
+    s.updateCell(at(4, r), xl.IntCellValue(sheet.totalSupply), cellStyle: totalRight);
+    s.updateCell(at(5, r), xl.IntCellValue(sheet.totalSale), cellStyle: totalRight);
+    s.updateCell(at(6, r), xl.IntCellValue(sheet.totalClosing), cellStyle: totalRight);
 
-    s.setColumnWidth(0, 44);
-    for (var c = 1; c <= 4; c++) {
+    s.setColumnWidth(0, 6);
+    s.setColumnWidth(1, 14);
+    s.setColumnWidth(2, 44);
+    for (var c = 3; c <= 6; c++) {
       s.setColumnWidth(c, 16);
     }
-    s.setColumnWidth(5, 44);
+    s.setColumnWidth(7, 44);
   }
 }
 // repositories/item_repository.dart
@@ -4814,9 +4867,11 @@ class ReportRow {
     required this.sale,
     required this.closing,
     this.remark = '',
+    this.code = '',
   });
 
   final String itemId;
+  final String code; // item serial number, e.g. SKU-1001
   final String name;
   final String subtitle;
   final int opening;
@@ -4829,6 +4884,18 @@ class ReportRow {
 
   /// True when something happened to this item on that day.
   bool get hasMovement => supply != 0 || sale != 0 || remark.isNotEmpty;
+
+  ReportRow withCode(String code) => ReportRow(
+    itemId: itemId,
+    name: name,
+    subtitle: subtitle,
+    opening: opening,
+    supply: supply,
+    sale: sale,
+    closing: closing,
+    remark: remark,
+    code: code,
+  );
 
   factory ReportRow.fromJson(Map<String, dynamic> j) => ReportRow(
     itemId: j['item_id'] as String,
@@ -4867,11 +4934,13 @@ List<ReportSheet> buildReportSheets({
   required List<Item> activeItems,
 }) {
   final keyFormat = DateFormat('yyyy-MM-dd');
+  final codeById = {for (final i in activeItems) i.id: i.itemSerial ?? ''};
 
   final byDate = <String, Map<String, ReportRow>>{};
   for (final j in serverRows) {
     final row = ReportRow.fromJson(j);
-    (byDate[j['date'] as String] ??= {})[row.itemId] = row;
+    final withCode = row.withCode(codeById[row.itemId] ?? '');
+    (byDate[j['date'] as String] ??= {})[row.itemId] = withCode;
   }
 
   final sheets = <ReportSheet>[];
@@ -4896,6 +4965,7 @@ List<ReportSheet> buildReportSheets({
           supply: 0,
           sale: 0,
           closing: 0,
+          code: item.itemSerial ?? '',
         ),
       );
     }

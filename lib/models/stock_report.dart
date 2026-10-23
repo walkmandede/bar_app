@@ -1,4 +1,5 @@
 // models/stock_report.dart
+import 'package:bar_app/core/sorting.dart';
 import 'package:intl/intl.dart';
 
 import 'item.dart';
@@ -119,6 +120,8 @@ List<ReportSheet> buildReportSheets({
 
     final list = rows.values.toList()
       ..sort((a, b) {
+        final byCode = compareCodes(a.code, b.code);
+        if (byCode != 0) return byCode;
         final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
         return byName != 0 ? byName : a.subtitle.toLowerCase().compareTo(b.subtitle.toLowerCase());
       });

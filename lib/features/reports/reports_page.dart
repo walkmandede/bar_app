@@ -391,10 +391,11 @@ class _SheetTableState extends State<_SheetTable> {
     return LayoutBuilder(
       builder: (context, c) {
         final mobile = c.maxWidth < 700;
-        final nameW = mobile ? 150.0 : 300.0;
+        final codeW = mobile ? 84.0 : 110.0;
+        final nameW = mobile ? 132.0 : 280.0;
         final numW = mobile ? 78.0 : 112.0;
         final remarkMin = mobile ? 190.0 : 280.0;
-        final rightW = math.max(c.maxWidth - nameW - 2, numW * 4 + remarkMin);
+        final rightW = math.max(c.maxWidth - codeW - nameW - 2, numW * 4 + remarkMin);
         final remarkW = rightW - numW * 4;
 
         const head = AppColors.muted;
@@ -442,6 +443,7 @@ class _SheetTableState extends State<_SheetTable> {
               // Header (stays on top)
               Row(
                 children: [
+                  _cell('Code', codeW, height: _headH, bold: true, bg: head, fontSize: 12),
                   _cell('Item Name', nameW, height: _headH, bold: true, bg: head, fontSize: 12),
                   Expanded(
                     child: SingleChildScrollView(
@@ -459,15 +461,34 @@ class _SheetTableState extends State<_SheetTable> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Item names stay in place when scrolling sideways
+                      // Code and item name stay in place when scrolling sideways
                       Column(
                         children: [
-                          for (final r in widget.rows) _cell(r.displayName, nameW, maxLines: 2),
-                          _cell(
-                            widget.filtered ? 'Total (all items)' : 'Total',
-                            nameW,
-                            bold: true,
-                            bg: head,
+                          for (final r in widget.rows)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _cell(
+                                  r.code.isEmpty ? '-' : r.code,
+                                  codeW,
+                                  bold: true,
+                                  fontSize: 12,
+                                  color: r.code.isEmpty ? AppColors.textSoft : null,
+                                ),
+                                _cell(r.displayName, nameW, maxLines: 2),
+                              ],
+                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _cell('', codeW, bg: head),
+                              _cell(
+                                widget.filtered ? 'Total (all items)' : 'Total',
+                                nameW,
+                                bold: true,
+                                bg: head,
+                              ),
+                            ],
                           ),
                         ],
                       ),

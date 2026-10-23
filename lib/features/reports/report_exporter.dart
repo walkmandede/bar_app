@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/app_exception.dart';
 import '../../core/file_download.dart';
+import '../../core/sorting.dart';
 import '../../models/stock_report.dart';
 
 /// Builds an .xlsx file with one sheet per date and downloads it.
@@ -87,10 +88,18 @@ class ReportExporter {
       );
     }
 
-    // Item rows
+    // Item rows, sorted by code. Items without a code go last.
+    final sortedRows = [...sheet.rows]
+      ..sort((a, b) {
+        final byCode = compareCodes(a.code, b.code);
+        if (byCode != 0) return byCode;
+        final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        return byName != 0 ? byName : a.subtitle.toLowerCase().compareTo(b.subtitle.toLowerCase());
+      });
+
     var r = headerRow + 1;
     var no = 1;
-    for (final row in sheet.rows) {
+    for (final row in sortedRows) {
       s.updateCell(at(0, r), xl.IntCellValue(no++), cellStyle: number);
       s.updateCell(at(1, r), xl.TextCellValue(row.code));
       s.updateCell(at(2, r), xl.TextCellValue(row.displayName));
