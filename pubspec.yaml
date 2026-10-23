@@ -17,8 +17,8 @@ dependencies:
   intl: 
   table_calendar: 
   google_fonts: ^8.2.1
-  excel: ^4.0.6
   web: ^1.1.1
+  excel_plus: ^2.29.0
 
 dev_dependencies:
   flutter_test:

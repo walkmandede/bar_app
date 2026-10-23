@@ -1,7 +1,7 @@
 // features/reports/report_exporter.dart
 import 'dart:typed_data';
 
-import 'package:excel/excel.dart' as xl;
+import 'package:excel_plus/excel_plus.dart' as xl;
 import 'package:intl/intl.dart';
 
 import '../../core/app_exception.dart';
